@@ -1,7 +1,8 @@
 [package]
-name = "rustc_codegen_llvm"
-version = "0.0.0"
+name = "rustc_codegen_tpde"
+version = "0.1.0"
 edition = "2024"
+authors = ["TechnoPorg"]
 
 [lib]
 test = false
@@ -25,7 +26,15 @@ serde_json = "1"
 tracing = "0.1"
 # tidy-alphabetical-end
 
+
+[build-dependencies]
+# tidy-alphabetical-start
+# `cc` updates often break things, so we pin it here.
+cc = "=1.2.16"
+# tidy-alphabetical-end
+
 [features]
+check_only = []
 # tidy-alphabetical-start
 llvm_enzyme = []
 # tidy-alphabetical-end

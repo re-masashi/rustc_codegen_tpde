@@ -5,7 +5,6 @@
 //! This API is completely unstable and subject to change.
 
 // tidy-alphabetical-start
-#![cfg_attr(bootstrap, feature(slice_as_array))]
 #![feature(assert_matches)]
 #![feature(extern_types)]
 #![feature(file_buffered)]
@@ -19,7 +18,6 @@
 // tidy-alphabetical-end
 
 // tidy-alphabetical-start
-extern crate rustc_middle;
 extern crate rustc_abi;
 extern crate rustc_ast;
 extern crate rustc_codegen_ssa;
@@ -36,6 +34,7 @@ extern crate rustc_llvm;
 extern crate rustc_log;
 extern crate rustc_macros;
 extern crate rustc_metadata;
+extern crate rustc_middle;
 extern crate rustc_query_system;
 extern crate rustc_sanitizers;
 extern crate rustc_session;
@@ -43,6 +42,10 @@ extern crate rustc_span;
 extern crate rustc_symbol_mangling;
 extern crate rustc_target;
 // tidy-alphabetical-end
+
+// This prevents duplicating functions and statics that are already part of the host rustc process.
+#[allow(unused_extern_crates)]
+extern crate rustc_driver;
 
 extern crate measureme;
 extern crate smallvec;

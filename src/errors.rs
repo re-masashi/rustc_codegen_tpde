@@ -9,7 +9,7 @@ use rustc_span::Span;
 use crate::fluent_generated as fluent;
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_symbol_already_defined)]
+#[diag(codegen_tpde_symbol_already_defined)]
 pub(crate) struct SymbolAlreadyDefined<'a> {
     #[primary_span]
     pub span: Span,
@@ -17,7 +17,7 @@ pub(crate) struct SymbolAlreadyDefined<'a> {
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_sanitizer_memtag_requires_mte)]
+#[diag(codegen_tpde_sanitizer_memtag_requires_mte)]
 pub(crate) struct SanitizerMemtagRequiresMte;
 
 pub(crate) struct ParseTargetMachineConfig<'a>(pub LlvmError<'a>);
@@ -27,44 +27,44 @@ impl<G: EmissionGuarantee> Diagnostic<'_, G> for ParseTargetMachineConfig<'_> {
         let diag: Diag<'_, G> = self.0.into_diag(dcx, level);
         let (message, _) = diag.messages.first().expect("`LlvmError` with no message");
         let message = dcx.eagerly_translate_to_string(message.clone(), diag.args.iter());
-        Diag::new(dcx, level, fluent::codegen_llvm_parse_target_machine_config)
+        Diag::new(dcx, level, fluent::codegen_tpde_parse_target_machine_config)
             .with_arg("error", message)
     }
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_autodiff_without_enable)]
+#[diag(codegen_tpde_autodiff_without_enable)]
 pub(crate) struct AutoDiffWithoutEnable;
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_lto_bitcode_from_rlib)]
+#[diag(codegen_tpde_lto_bitcode_from_rlib)]
 pub(crate) struct LtoBitcodeFromRlib {
     pub err: String,
 }
 
 #[derive(Diagnostic)]
 pub enum LlvmError<'a> {
-    #[diag(codegen_llvm_write_output)]
+    #[diag(codegen_tpde_write_output)]
     WriteOutput { path: &'a Path },
-    #[diag(codegen_llvm_target_machine)]
+    #[diag(codegen_tpde_target_machine)]
     CreateTargetMachine { triple: SmallCStr },
-    #[diag(codegen_llvm_run_passes)]
+    #[diag(codegen_tpde_run_passes)]
     RunLlvmPasses,
-    #[diag(codegen_llvm_serialize_module)]
+    #[diag(codegen_tpde_serialize_module)]
     SerializeModule { name: &'a str },
-    #[diag(codegen_llvm_write_ir)]
+    #[diag(codegen_tpde_write_ir)]
     WriteIr { path: &'a Path },
-    #[diag(codegen_llvm_prepare_thin_lto_context)]
+    #[diag(codegen_tpde_prepare_thin_lto_context)]
     PrepareThinLtoContext,
-    #[diag(codegen_llvm_load_bitcode)]
+    #[diag(codegen_tpde_load_bitcode)]
     LoadBitcode { name: CString },
-    #[diag(codegen_llvm_write_thinlto_key)]
+    #[diag(codegen_tpde_write_thinlto_key)]
     WriteThinLtoKey { err: std::io::Error },
-    #[diag(codegen_llvm_prepare_thin_lto_module)]
+    #[diag(codegen_tpde_prepare_thin_lto_module)]
     PrepareThinLtoModule,
-    #[diag(codegen_llvm_parse_bitcode)]
+    #[diag(codegen_tpde_parse_bitcode)]
     ParseBitcode,
-    #[diag(codegen_llvm_prepare_autodiff)]
+    #[diag(codegen_tpde_prepare_autodiff)]
     PrepareAutoDiff { src: String, target: String, error: String },
 }
 
@@ -74,17 +74,17 @@ impl<G: EmissionGuarantee> Diagnostic<'_, G> for WithLlvmError<'_> {
     fn into_diag(self, dcx: DiagCtxtHandle<'_>, level: Level) -> Diag<'_, G> {
         use LlvmError::*;
         let msg_with_llvm_err = match &self.0 {
-            WriteOutput { .. } => fluent::codegen_llvm_write_output_with_llvm_err,
-            CreateTargetMachine { .. } => fluent::codegen_llvm_target_machine_with_llvm_err,
-            RunLlvmPasses => fluent::codegen_llvm_run_passes_with_llvm_err,
-            SerializeModule { .. } => fluent::codegen_llvm_serialize_module_with_llvm_err,
-            WriteIr { .. } => fluent::codegen_llvm_write_ir_with_llvm_err,
-            PrepareThinLtoContext => fluent::codegen_llvm_prepare_thin_lto_context_with_llvm_err,
-            LoadBitcode { .. } => fluent::codegen_llvm_load_bitcode_with_llvm_err,
-            WriteThinLtoKey { .. } => fluent::codegen_llvm_write_thinlto_key_with_llvm_err,
-            PrepareThinLtoModule => fluent::codegen_llvm_prepare_thin_lto_module_with_llvm_err,
-            ParseBitcode => fluent::codegen_llvm_parse_bitcode_with_llvm_err,
-            PrepareAutoDiff { .. } => fluent::codegen_llvm_prepare_autodiff_with_llvm_err,
+            WriteOutput { .. } => fluent::codegen_tpde_write_output_with_llvm_err,
+            CreateTargetMachine { .. } => fluent::codegen_tpde_target_machine_with_llvm_err,
+            RunLlvmPasses => fluent::codegen_tpde_run_passes_with_llvm_err,
+            SerializeModule { .. } => fluent::codegen_tpde_serialize_module_with_llvm_err,
+            WriteIr { .. } => fluent::codegen_tpde_write_ir_with_llvm_err,
+            PrepareThinLtoContext => fluent::codegen_tpde_prepare_thin_lto_context_with_llvm_err,
+            LoadBitcode { .. } => fluent::codegen_tpde_load_bitcode_with_llvm_err,
+            WriteThinLtoKey { .. } => fluent::codegen_tpde_write_thinlto_key_with_llvm_err,
+            PrepareThinLtoModule => fluent::codegen_tpde_prepare_thin_lto_module_with_llvm_err,
+            ParseBitcode => fluent::codegen_tpde_parse_bitcode_with_llvm_err,
+            PrepareAutoDiff { .. } => fluent::codegen_tpde_prepare_autodiff_with_llvm_err,
         };
         self.0
             .into_diag(dcx, level)
@@ -94,7 +94,7 @@ impl<G: EmissionGuarantee> Diagnostic<'_, G> for WithLlvmError<'_> {
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_from_llvm_optimization_diag)]
+#[diag(codegen_tpde_from_llvm_optimization_diag)]
 pub(crate) struct FromLlvmOptimizationDiag<'a> {
     pub filename: &'a str,
     pub line: std::ffi::c_uint,
@@ -105,32 +105,32 @@ pub(crate) struct FromLlvmOptimizationDiag<'a> {
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_from_llvm_diag)]
+#[diag(codegen_tpde_from_llvm_diag)]
 pub(crate) struct FromLlvmDiag {
     pub message: String,
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_write_bytecode)]
+#[diag(codegen_tpde_write_bytecode)]
 pub(crate) struct WriteBytecode<'a> {
     pub path: &'a Path,
     pub err: std::io::Error,
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_copy_bitcode)]
+#[diag(codegen_tpde_copy_bitcode)]
 pub(crate) struct CopyBitcode {
     pub err: std::io::Error,
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_unknown_debuginfo_compression)]
+#[diag(codegen_tpde_unknown_debuginfo_compression)]
 pub(crate) struct UnknownCompression {
     pub algorithm: &'static str,
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_mismatch_data_layout)]
+#[diag(codegen_tpde_mismatch_data_layout)]
 pub(crate) struct MismatchedDataLayout<'a> {
     pub rustc_target: &'a str,
     pub rustc_layout: &'a str,
@@ -139,11 +139,11 @@ pub(crate) struct MismatchedDataLayout<'a> {
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_fixed_x18_invalid_arch)]
+#[diag(codegen_tpde_fixed_x18_invalid_arch)]
 pub(crate) struct FixedX18InvalidArch<'a> {
     pub arch: &'a str,
 }
 
 #[derive(Diagnostic)]
-#[diag(codegen_llvm_sanitizer_kcfi_arity_requires_llvm_21_0_0)]
+#[diag(codegen_tpde_sanitizer_kcfi_arity_requires_llvm_21_0_0)]
 pub(crate) struct SanitizerKcfiArityRequiresLLVM2100;
