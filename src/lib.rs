@@ -493,3 +493,8 @@ impl Drop for ModuleLlvm {
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub fn __rustc_codegen_backend() -> Box<dyn CodegenBackend> {
+    LlvmCodegenBackend::new()
+}

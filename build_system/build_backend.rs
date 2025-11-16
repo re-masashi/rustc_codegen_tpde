@@ -22,6 +22,9 @@ pub(crate) fn build_backend(dirs: &Dirs, bootstrap_host_compiler: &Compiler) -> 
         cmd.env("CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS", "true");
     }
 
+    cmd.env("LLVM_CONFIG", "llvm-config");
+    cmd.env("LLVM_LINK_SHARED", "true");
+
     cmd.arg("--release");
 
     eprintln!("[BUILD] rustc_codegen_tpde");

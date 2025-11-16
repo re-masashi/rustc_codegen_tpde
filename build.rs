@@ -48,7 +48,7 @@ fn detect_llvm_link() -> (&'static str, &'static str) {
 // perfect -- we might actually want to see something from Cargo's added library paths -- but
 // for now it works.
 fn restore_library_path() {
-    let key = tracked_env_var_os("REAL_LIBRARY_PATH_VAR").expect("REAL_LIBRARY_PATH_VAR");
+    let key = "LD_LIBRARY_PATH";
     if let Some(env) = tracked_env_var_os("REAL_LIBRARY_PATH") {
         unsafe {
             env::set_var(&key, env);
@@ -440,12 +440,23 @@ fn main() {
         println!("cargo:rustc-link-lib=static:-bundle=pthread");
     }
 
-    // TPDE codegen
+    // Build TPDE
     let mut cmd = Command::new(&llvm_config);
     cmd.arg("--cmakedir");
     let llvm_cmake_dir = output(&mut cmd);
     let tpde_dst = cmake::Config::new("tpde").define("LLVM_DIR", llvm_cmake_dir.trim()).build();
+    // Link TPDE dependencies
+    println!("cargo:rustc-link-search=native={}/build/tpde/deps/disarm", tpde_dst.display());
+    println!("cargo:rustc-link-lib=static=disarm64");
+    println!("cargo:rustc-link-search=native={}/build/tpde/deps/fadec", tpde_dst.display());
+    println!("cargo:rustc-link-lib=static=fadec");
+    println!("cargo:rustc-link-search=native={}/build/tpde/deps/spdlog", tpde_dst.display());
+    println!("cargo:rustc-link-lib=static=spdlog");
+    // Link TPDE itself
+    println!("cargo:rustc-link-search=native={}/build/tpde", tpde_dst.display());
+    println!("cargo:rustc-link-lib=static=tpde");
     println!("cargo:rustc-link-search=native={}/build/tpde-llvm", tpde_dst.display());
     println!("cargo:rustc-link-lib=static=tpde_llvm");
+
     rerun_if_changed_anything_in_dir(Path::new("tpde"));
 }
