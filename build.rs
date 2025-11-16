@@ -436,4 +436,13 @@ fn main() {
     if target.ends_with("windows-gnu") {
         println!("cargo:rustc-link-lib=static:-bundle=pthread");
     }
+
+    // TPDE codegen
+    let mut cmd = Command::new(&llvm_config);
+    cmd.arg("--cmakedir");
+    let llvm_cmake_dir = output(&mut cmd);
+    let tpde_dst = cmake::Config::new("tpde").define("LLVM_DIR", llvm_cmake_dir.trim()).build();
+    println!("cargo:rustc-link-search=native={}/build/tpde-llvm", tpde_dst.display());
+    println!("cargo:rustc-link-lib=static=tpde_llvm");
+    rerun_if_changed_anything_in_dir(Path::new("tpde"));
 }
