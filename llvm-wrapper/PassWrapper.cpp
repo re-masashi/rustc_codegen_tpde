@@ -44,6 +44,10 @@
 #include "llvm/Transforms/Utils/CanonicalizeAliases.h"
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 #include "llvm/Transforms/Utils/NameAnonGlobals.h"
+
+#include "tpde-llvm/LLVMCompiler.hpp"
+
+#include <fstream>
 #include <set>
 #include <string>
 #include <vector>
@@ -420,41 +424,33 @@ extern "C" LLVMRustResult
 LLVMRustWriteOutputFile(LLVMTargetMachineRef Target, LLVMPassManagerRef PMR,
                         LLVMModuleRef M, const char *Path, const char *DwoPath,
                         LLVMRustFileType RustFileType, bool VerifyIR) {
-  llvm::legacy::PassManager *PM = unwrap<llvm::legacy::PassManager>(PMR);
-  auto FileType = fromRust(RustFileType);
 
-  std::string ErrorInfo;
-  std::error_code EC;
-  auto OS = raw_fd_ostream(Path, EC, sys::fs::OF_None);
-  if (EC)
-    ErrorInfo = EC.message();
-  if (ErrorInfo != "") {
-    LLVMRustSetLastError(ErrorInfo.c_str());
+  if (DwoPath) {
+    LLVMRustSetLastError(
+        "The TPDE codegen backend does not support split debug info.");
     return LLVMRustResult::Failure;
   }
 
-  auto BOS = buffer_ostream(OS);
-  if (DwoPath) {
-    auto DOS = raw_fd_ostream(DwoPath, EC, sys::fs::OF_None);
-    EC.clear();
-    if (EC)
-      ErrorInfo = EC.message();
-    if (ErrorInfo != "") {
-      LLVMRustSetLastError(ErrorInfo.c_str());
-      return LLVMRustResult::Failure;
-    }
-    auto DBOS = buffer_ostream(DOS);
-    unwrap(Target)->addPassesToEmitFile(*PM, BOS, &DBOS, FileType, !VerifyIR);
-    PM->run(*unwrap(M));
-  } else {
-    unwrap(Target)->addPassesToEmitFile(*PM, BOS, nullptr, FileType, !VerifyIR);
-    PM->run(*unwrap(M));
+  if (RustFileType != LLVMRustFileType::ObjectFile) {
+    LLVMRustSetLastError(
+        "The TPDE codegen backend does not support emitting assembly files");
+    return LLVMRustResult::Failure;
   }
 
-  // Apparently `addPassesToEmitFile` adds a pointer to our on-the-stack output
-  // stream (OS), so the only real safe place to delete this is here? Don't we
-  // wish this was written in Rust?
-  LLVMDisposePassManager(PMR);
+  std::unique_ptr<tpde_llvm::LLVMCompiler> TpdeCompiler =
+      tpde_llvm::LLVMCompiler::create(Triple(unwrap(M)->getTargetTriple()));
+  std::vector<uint8_t> TpdeOutputBuffer;
+  TpdeOutputBuffer.reserve(1024 * 4);
+  if (!TpdeCompiler->compile_to_elf(*unwrap(M), TpdeOutputBuffer)) {
+    LLVMRustSetLastError("Failed to compile LLVM module with TPDE");
+    return LLVMRustResult::Failure;
+  }
+
+  std::fstream OutputFile =
+      std::fstream(Path, std::ios::out | std::ios::binary);
+  OutputFile.write((char *)&TpdeOutputBuffer[0], TpdeOutputBuffer.size());
+  OutputFile.close();
+
   return LLVMRustResult::Success;
 }
 

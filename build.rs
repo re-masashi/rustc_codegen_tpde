@@ -222,6 +222,9 @@ fn main() {
         cfg.define("NDEBUG", None);
     }
 
+    // Include TPDE headers
+    cfg.include("tpde/tpde-llvm/include");
+
     rerun_if_changed_anything_in_dir(Path::new("llvm-wrapper"));
     cfg.file("llvm-wrapper/PassWrapper.cpp")
         .file("llvm-wrapper/RustWrapper.cpp")
