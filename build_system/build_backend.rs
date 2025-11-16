@@ -6,44 +6,30 @@ use crate::rustc_info::get_file_name;
 use crate::shared_utils::{rustflags_from_env, rustflags_to_cmd_env};
 use crate::utils::{CargoProject, Compiler, LogGroup};
 
-static CG_CLIF: CargoProject = CargoProject::new(&RelPath::source("."), "cg_clif");
+static CG_TPDE: CargoProject = CargoProject::new(&RelPath::source("."), "cg_tpde");
 
-pub(crate) fn build_backend(
-    dirs: &Dirs,
-    bootstrap_host_compiler: &Compiler,
-    use_unstable_features: bool,
-    panic_unwind_support: bool,
-) -> PathBuf {
+pub(crate) fn build_backend(dirs: &Dirs, bootstrap_host_compiler: &Compiler) -> PathBuf {
     let _group = LogGroup::guard("Build backend");
 
-    let mut cmd = CG_CLIF.build(bootstrap_host_compiler, dirs);
+    let mut cmd = CG_TPDE.build(bootstrap_host_compiler, dirs);
 
     let mut rustflags = rustflags_from_env("RUSTFLAGS");
-    rustflags.push("-Zallow-features=rustc_private,f16,f128".to_owned());
+    rustflags.push("-Zallow-features=assert_matches,extern_types,file_buffered,if_let_guard,impl_trait_in_assoc_type,iter_intersperse,macro_derive,rustc_private,trim_prefix_suffix,try_blocks".to_owned());
     rustflags_to_cmd_env(&mut cmd, "RUSTFLAGS", &rustflags);
 
-    if env::var("CG_CLIF_EXPENSIVE_CHECKS").is_ok() {
-        // Enabling debug assertions implicitly enables the clif ir verifier
+    if env::var("CG_TPDE_EXPENSIVE_CHECKS").is_ok() {
         cmd.env("CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS", "true");
         cmd.env("CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS", "true");
     }
 
-    if use_unstable_features {
-        cmd.arg("--features").arg("unstable-features");
-    }
-
-    if panic_unwind_support {
-        cmd.arg("--features").arg("unwinding");
-    }
-
     cmd.arg("--release");
 
-    eprintln!("[BUILD] rustc_codegen_cranelift");
+    eprintln!("[BUILD] rustc_codegen_tpde");
     crate::utils::spawn_and_wait(cmd);
 
-    CG_CLIF
+    CG_TPDE
         .target_dir(dirs)
         .join(&bootstrap_host_compiler.triple)
         .join("release")
-        .join(get_file_name(&bootstrap_host_compiler.rustc, "rustc_codegen_cranelift", "dylib"))
+        .join(get_file_name(&bootstrap_host_compiler.rustc, "rustc_codegen_tpde", "dylib"))
 }

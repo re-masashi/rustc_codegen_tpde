@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-# CG_CLIF_FORCE_GNU_AS will force usage of as instead of the LLVM backend of rustc as
+# CG_TPDE_FORCE_GNU_AS will force usage of as instead of the LLVM backend of rustc as
 # the LLVM backend isn't compiled in here.
-export CG_CLIF_FORCE_GNU_AS=1
+export CG_TPDE_FORCE_GNU_AS=1
 
 # Compiletest expects all standard library paths to start with /rustc/FAKE_PREFIX.
-# CG_CLIF_STDLIB_REMAP_PATH_PREFIX will cause cg_clif's build system to pass
+# CG_TPDE_STDLIB_REMAP_PATH_PREFIX will cause cg_tpde's build system to pass
 # --remap-path-prefix to handle this.
-CG_CLIF_STDLIB_REMAP_PATH_PREFIX=/rustc/FAKE_PREFIX ./y.sh build
+CG_TPDE_STDLIB_REMAP_PATH_PREFIX=/rustc/FAKE_PREFIX ./y.sh build
 
 echo "[SETUP] Rust fork"
 git clone --quiet https://github.com/rust-lang/rust.git --filter=tree:0 || true
@@ -29,7 +29,7 @@ change-id = 999999
 download-ci-llvm = true
 
 [build]
-rustc = "$(pwd)/../dist/bin/rustc-clif"
+rustc = "$(pwd)/../dist/bin/rustc-tpde"
 cargo = "$(rustup which cargo)"
 full-bootstrap = true
 local-rebuild = true
@@ -37,10 +37,10 @@ compiletest-allow-stage0 = true
 
 [rust]
 download-rustc = false
-codegen-backends = ["cranelift"]
+codegen-backends = ["tpde"]
 deny-warnings = false
 verbose-tests = false
-# The cg_clif sysroot doesn't contain llvm tools and unless llvm_tools is
+# The cg_tpde sysroot doesn't contain llvm tools and unless llvm_tools is
 # disabled bootstrap will crash trying to copy llvm tools for the bootstrap
 # compiler.
 llvm-tools = false

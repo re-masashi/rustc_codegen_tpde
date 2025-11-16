@@ -41,17 +41,17 @@ case $1 in
     "push")
         check_git_fixed_subtree
 
-        cg_clif=$(pwd)
+        cg_tpde=$(pwd)
         pushd ../rust
         git pull origin main
-        branch=sync_cg_clif-$(date +%Y-%m-%d)
+        branch=sync_cg_tpde-$(date +%Y-%m-%d)
         git checkout -b "$branch"
-        "$cg_clif/git-fixed-subtree.sh" pull --prefix=compiler/rustc_codegen_cranelift/ https://github.com/rust-lang/rustc_codegen_cranelift.git main
+        "$cg_tpde/git-fixed-subtree.sh" pull --prefix=compiler/rustc_codegen_tpde/ https://github.com/rust-lang/rustc_codegen_tpde.git main
         git push -u my "$branch"
 
-        # immediately merge the merge commit into cg_clif to prevent merge conflicts when syncing
+        # immediately merge the merge commit into cg_tpde to prevent merge conflicts when syncing
         # from rust-lang/rust later
-        "$cg_clif/git-fixed-subtree.sh" push --prefix=compiler/rustc_codegen_cranelift/ "$cg_clif" sync_from_rust
+        "$cg_tpde/git-fixed-subtree.sh" push --prefix=compiler/rustc_codegen_tpde/ "$cg_tpde" sync_from_rust
         popd
         git merge sync_from_rust
 	;;
@@ -61,11 +61,11 @@ case $1 in
         RUST_VERS=$(curl "https://static.rust-lang.org/dist/$TOOLCHAIN/channel-rust-nightly-git-commit-hash.txt")
         echo "Pulling $RUST_VERS ($TOOLCHAIN)"
 
-        cg_clif=$(pwd)
+        cg_tpde=$(pwd)
         pushd ../rust
         git fetch origin main
         git -c advice.detachedHead=false checkout "$RUST_VERS"
-        "$cg_clif/git-fixed-subtree.sh" push --prefix=compiler/rustc_codegen_cranelift/ "$cg_clif" sync_from_rust
+        "$cg_tpde/git-fixed-subtree.sh" push --prefix=compiler/rustc_codegen_tpde/ "$cg_tpde" sync_from_rust
         popd
         git merge sync_from_rust -m "Sync from rust $RUST_VERS"
         git branch -d sync_from_rust

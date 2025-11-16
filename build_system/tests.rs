@@ -174,7 +174,7 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
         if runner.is_native {
             let mut run_cmd = REGEX.test(&runner.target_compiler, &runner.dirs);
             // regex-capi and regex-debug don't have any tests. Nor do they contain any code
-            // that is useful to test with cg_clif. Skip building them to reduce test time.
+            // that is useful to test with cg_tpde. Skip building them to reduce test time.
             run_cmd.args([
                 "-p",
                 "regex",
@@ -226,10 +226,8 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
 pub(crate) fn run_tests(
     dirs: &Dirs,
     sysroot_kind: SysrootKind,
-    use_unstable_features: bool,
-    panic_unwind_support: bool,
     skip_tests: &[&str],
-    cg_clif_dylib: &CodegenBackend,
+    cg_tpde_dylib: &CodegenBackend,
     bootstrap_host_compiler: &Compiler,
     rustup_toolchain_name: Option<&str>,
     target_triple: String,
@@ -242,18 +240,15 @@ pub(crate) fn run_tests(
         let target_compiler = build_sysroot::build_sysroot(
             dirs,
             SysrootKind::None,
-            cg_clif_dylib,
+            cg_tpde_dylib,
             bootstrap_host_compiler,
             rustup_toolchain_name,
             target_triple.clone(),
-            panic_unwind_support,
         );
 
         let runner = TestRunner::new(
             dirs.clone(),
             target_compiler,
-            use_unstable_features,
-            panic_unwind_support,
             skip_tests,
             bootstrap_host_compiler.triple == target_triple,
             stdlib_source.clone(),
@@ -276,18 +271,15 @@ pub(crate) fn run_tests(
         let target_compiler = build_sysroot::build_sysroot(
             dirs,
             sysroot_kind,
-            cg_clif_dylib,
+            cg_tpde_dylib,
             bootstrap_host_compiler,
             rustup_toolchain_name,
             target_triple.clone(),
-            panic_unwind_support,
         );
 
         let mut runner = TestRunner::new(
             dirs.clone(),
             target_compiler,
-            use_unstable_features,
-            panic_unwind_support,
             skip_tests,
             bootstrap_host_compiler.triple == target_triple,
             stdlib_source,
@@ -313,7 +305,6 @@ pub(crate) fn run_tests(
 struct TestRunner<'a> {
     is_native: bool,
     jit_supported: bool,
-    panic_unwind_support: bool,
     skip_tests: &'a [&'a str],
     dirs: Dirs,
     target_compiler: Compiler,
@@ -324,8 +315,6 @@ impl<'a> TestRunner<'a> {
     fn new(
         dirs: Dirs,
         mut target_compiler: Compiler,
-        use_unstable_features: bool,
-        panic_unwind_support: bool,
         skip_tests: &'a [&'a str],
         is_native: bool,
         stdlib_source: PathBuf,
@@ -333,18 +322,9 @@ impl<'a> TestRunner<'a> {
         target_compiler.rustflags.extend(rustflags_from_env("RUSTFLAGS"));
         target_compiler.rustdocflags.extend(rustflags_from_env("RUSTDOCFLAGS"));
 
-        let jit_supported =
-            use_unstable_features && is_native && !target_compiler.triple.contains("windows");
+        let jit_supported = false;
 
-        Self {
-            is_native,
-            jit_supported,
-            panic_unwind_support,
-            skip_tests,
-            dirs,
-            target_compiler,
-            stdlib_source,
-        }
+        Self { is_native, jit_supported, skip_tests, dirs, target_compiler, stdlib_source }
     }
 
     fn run_testsuite(&self, tests: &[TestCase]) {
@@ -390,7 +370,7 @@ impl<'a> TestRunner<'a> {
                         "jit",
                     ]);
                     if !args.is_empty() {
-                        jit_cmd.env("CG_CLIF_JIT_ARGS", args);
+                        jit_cmd.env("CG_TPDE_JIT_ARGS", args);
                     }
                     spawn_and_wait(jit_cmd);
                 }
@@ -413,9 +393,6 @@ impl<'a> TestRunner<'a> {
         cmd.arg("-Cdebuginfo=2");
         cmd.arg("--target");
         cmd.arg(&self.target_compiler.triple);
-        if !self.panic_unwind_support {
-            cmd.arg("-Cpanic=abort");
-        }
         cmd.arg("--check-cfg=cfg(jit)");
         cmd.arg("--edition=2024");
         cmd.args(args);

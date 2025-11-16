@@ -43,7 +43,7 @@ enum Command {
 #[derive(Copy, Clone, Debug)]
 enum SysrootKind {
     None,
-    Clif,
+    Tpde,
     Llvm,
 }
 
@@ -57,7 +57,6 @@ fn main() {
     if env::var_os("RUST_BACKTRACE").is_none() {
         env::set_var("RUST_BACKTRACE", "1");
     }
-    env::set_var("CG_CLIF_DISABLE_INCR_CACHE", "1");
 
     // Force incr comp even in release mode unless in CI or incremental builds are explicitly disabled
     if env::var_os("CARGO_BUILD_INCREMENTAL").is_none() {
@@ -81,9 +80,7 @@ fn main() {
 
     let mut out_dir = PathBuf::from(".");
     let mut download_dir = None;
-    let mut sysroot_kind = SysrootKind::Clif;
-    let mut use_unstable_features = true;
-    let mut panic_unwind_support = false;
+    let mut sysroot_kind = SysrootKind::Tpde;
     let mut frozen = false;
     let mut skip_tests = vec![];
     let mut use_backend = None;
@@ -102,14 +99,12 @@ fn main() {
             "--sysroot" => {
                 sysroot_kind = match args.next().as_deref() {
                     Some("none") => SysrootKind::None,
-                    Some("clif") => SysrootKind::Clif,
+                    Some("tpde") => SysrootKind::Tpde,
                     Some("llvm") => SysrootKind::Llvm,
                     Some(arg) => arg_error!("Unknown sysroot kind {}", arg),
                     None => arg_error!("--sysroot requires argument"),
                 }
             }
-            "--no-unstable-features" => use_unstable_features = false,
-            "--panic-unwind-support" => panic_unwind_support = true,
             "--frozen" => frozen = true,
             "--skip-test" => {
                 // FIXME check that all passed in tests actually exist
@@ -196,15 +191,10 @@ fn main() {
     env::set_var("RUSTC", "rustc_should_be_set_explicitly");
     env::set_var("RUSTDOC", "rustdoc_should_be_set_explicitly");
 
-    let cg_clif_dylib = if let Some(name) = use_backend {
+    let cg_tpde_dylib = if let Some(name) = use_backend {
         CodegenBackend::Builtin(name)
     } else {
-        CodegenBackend::Local(build_backend::build_backend(
-            &dirs,
-            &bootstrap_host_compiler,
-            use_unstable_features,
-            panic_unwind_support,
-        ))
+        CodegenBackend::Local(build_backend::build_backend(&dirs, &bootstrap_host_compiler))
     };
     match command {
         Command::Prepare => {
@@ -214,10 +204,8 @@ fn main() {
             tests::run_tests(
                 &dirs,
                 sysroot_kind,
-                use_unstable_features,
-                panic_unwind_support,
                 &skip_tests.iter().map(|test| &**test).collect::<Vec<_>>(),
-                &cg_clif_dylib,
+                &cg_tpde_dylib,
                 &bootstrap_host_compiler,
                 rustup_toolchain_name.as_deref(),
                 target_triple.clone(),
@@ -231,32 +219,29 @@ fn main() {
             abi_cafe::run(
                 sysroot_kind,
                 &dirs,
-                &cg_clif_dylib,
+                &cg_tpde_dylib,
                 rustup_toolchain_name.as_deref(),
                 &bootstrap_host_compiler,
-                panic_unwind_support,
             );
         }
         Command::Build => {
             build_sysroot::build_sysroot(
                 &dirs,
                 sysroot_kind,
-                &cg_clif_dylib,
+                &cg_tpde_dylib,
                 &bootstrap_host_compiler,
                 rustup_toolchain_name.as_deref(),
                 target_triple,
-                panic_unwind_support,
             );
         }
         Command::Bench => {
             let compiler = build_sysroot::build_sysroot(
                 &dirs,
                 sysroot_kind,
-                &cg_clif_dylib,
+                &cg_tpde_dylib,
                 &bootstrap_host_compiler,
                 rustup_toolchain_name.as_deref(),
                 target_triple,
-                panic_unwind_support,
             );
             bench::benchmark(&dirs, &compiler);
         }

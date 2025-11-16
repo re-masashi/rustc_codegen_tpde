@@ -16,10 +16,9 @@ static ABI_CAFE: CargoProject = CargoProject::new(&ABI_CAFE_REPO.source_dir(), "
 pub(crate) fn run(
     sysroot_kind: SysrootKind,
     dirs: &Dirs,
-    cg_clif_dylib: &CodegenBackend,
+    cg_tpde_dylib: &CodegenBackend,
     rustup_toolchain_name: Option<&str>,
     bootstrap_host_compiler: &Compiler,
-    panic_unwind_support: bool,
 ) {
     std::fs::create_dir_all(&dirs.download_dir).unwrap();
     ABI_CAFE_REPO.fetch(dirs);
@@ -29,20 +28,19 @@ pub(crate) fn run(
     build_sysroot::build_sysroot(
         dirs,
         sysroot_kind,
-        cg_clif_dylib,
+        cg_tpde_dylib,
         bootstrap_host_compiler,
         rustup_toolchain_name,
         bootstrap_host_compiler.triple.clone(),
-        panic_unwind_support,
     );
 
     eprintln!("Running abi-cafe");
 
     let pairs: &[_] =
         if cfg!(not(any(target_os = "macos", all(target_os = "windows", target_env = "msvc")))) {
-            &["rustc_calls_cgclif", "cgclif_calls_rustc", "cgclif_calls_cc", "cc_calls_cgclif"]
+            &["rustc_calls_cgtpde", "cgtpde_calls_rustc", "cgtpde_calls_cc", "cc_calls_cgtpde"]
         } else {
-            &["rustc_calls_cgclif", "cgclif_calls_rustc"]
+            &["rustc_calls_cgtpde", "cgtpde_calls_rustc"]
         };
 
     let mut cmd = ABI_CAFE.run(bootstrap_host_compiler, dirs);
@@ -60,12 +58,12 @@ pub(crate) fn run(
     }
 
     cmd.arg("--add-rustc-codegen-backend");
-    match cg_clif_dylib {
+    match cg_tpde_dylib {
         CodegenBackend::Local(path) => {
-            cmd.arg(format!("cgclif:{}", path.display()));
+            cmd.arg(format!("cgtpde:{}", path.display()));
         }
         CodegenBackend::Builtin(name) => {
-            cmd.arg(format!("cgclif:{name}"));
+            cmd.arg(format!("cgtpde:{name}"));
         }
     }
 

@@ -2,7 +2,7 @@
 #![rustfmt::skip]/* This line is ignored by bash
 # This block is ignored by rustc
 pushd $(dirname "$0")/../
-RUSTC="$(pwd)/dist/rustc-clif"
+RUSTC="$(pwd)/dist/rustc-tpde"
 popd
 PROFILE=$1 OUTPUT=$2 exec $RUSTC -Zunstable-options -Cllvm-args=jit-mode -Cprefer-dynamic $0
 #*/
@@ -13,7 +13,7 @@ PROFILE=$1 OUTPUT=$2 exec $RUSTC -Zunstable-options -Cllvm-args=jit-mode -Cprefe
 //! Usage: ./filter_profile.rs <profile in stackcollapse format> <output file>
 //!
 //! This file is specially crafted to be both a valid bash script and valid rust source file. If
-//! executed as bash script this will run the rust source using cg_clif in JIT mode.
+//! executed as bash script this will run the rust source using cg_tpde in JIT mode.
 
 use std::io::Write;
 
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let count = &line[line.rfind(" ").unwrap() + 1..];
 
         // Filter away uninteresting samples
-        if !stack.contains("rustc_codegen_cranelift") {
+        if !stack.contains("rustc_codegen_tpde") {
             continue;
         }
 
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stack = &stack[index..];
         }
 
-        if let Some(index) = stack.find("rustc_codegen_cranelift::driver::aot::module_codegen") {
+        if let Some(index) = stack.find("rustc_codegen_tpde::driver::aot::module_codegen") {
             stack = &stack[index..];
         }
 
@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stack = &stack[..index + NORMALIZE_ERASING_LATE_BOUND_REGIONS.len()];
         }
 
-        const INST_BUILD: &str = "<cranelift_frontend::frontend::FuncInstBuilder as cranelift_codegen::ir::builder::InstBuilderBase>::build";
+        const INST_BUILD: &str = "<tpde_frontend::frontend::FuncInstBuilder as tpde_codegen::ir::builder::InstBuilderBase>::build";
         if let Some(index) = stack.find(INST_BUILD) {
             stack = &stack[..index + INST_BUILD.len()];
         }

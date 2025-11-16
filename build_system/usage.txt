@@ -1,17 +1,17 @@
-The build system of cg_clif.
+The build system of cg_tpde.
 
 USAGE:
     ./y.sh prepare [--out-dir DIR] [--download-dir DIR]
-    ./y.sh build [--sysroot none|clif|llvm] [--out-dir DIR] [--download-dir DIR] [--no-unstable-features] [--frozen]
-    ./y.sh test [--sysroot none|clif|llvm] [--out-dir DIR] [--download-dir DIR] [--no-unstable-features] [--frozen] [--skip-test TESTNAME]
-    ./y.sh abi-cafe [--sysroot none|clif|llvm] [--out-dir DIR] [--download-dir DIR] [--no-unstable-features] [--frozen]
-    ./y.sh bench [--sysroot none|clif|llvm] [--out-dir DIR] [--download-dir DIR] [--no-unstable-features] [--frozen]
+    ./y.sh build [--sysroot none|tpde|llvm] [--out-dir DIR] [--download-dir DIR] [--frozen]
+    ./y.sh test [--sysroot none|tpde|llvm] [--out-dir DIR] [--download-dir DIR] [--frozen] [--skip-test TESTNAME]
+    ./y.sh abi-cafe [--sysroot none|tpde|llvm] [--out-dir DIR] [--download-dir DIR] [--frozen]
+    ./y.sh bench [--sysroot none|tpde|llvm] [--out-dir DIR] [--download-dir DIR] [--frozen]
 
 OPTIONS:
-    --sysroot none|clif|llvm
+    --sysroot none|tpde|llvm
             Which sysroot libraries to use:
             `none` will not include any standard library in the sysroot.
-            `clif` will build the standard library using Cranelift.
+            `tpde` will build the standard library using TPDE.
             `llvm` will use the pre-compiled standard library of rustc which is compiled with LLVM.
 
     --out-dir DIR
@@ -21,14 +21,6 @@ OPTIONS:
     --download-dir DIR
             Specify the directory in which the download directory is stored. Overrides --out-dir.
 
-    --no-unstable-features
-            Some features are not yet ready for production usage. This option will disable these
-            features. This includes the JIT mode and inline assembly support.
-
-    --panic-unwind-support
-            Enable support for unwinding when -Cpanic=unwind is used. This currently regresses build
-            performance.
-
     --frozen
             Require Cargo.lock and cache are up to date
 
@@ -36,7 +28,7 @@ OPTIONS:
             Skip testing the TESTNAME test. The test name format is the same as config.txt.
 
     --use-backend NAME
-            Use the existing Cranelift (or other) backend of the rustc with which we built.
+            Use the existing TPDE (or other) backend of the rustc with which we built.
             Warning: This is meant for use in rust's CI only!
 
 REQUIREMENTS:

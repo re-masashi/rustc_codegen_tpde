@@ -57,7 +57,7 @@ rm tests/ui/delegation/fn-header.rs
 rm tests/ui/target-feature/missing-plusminus.rs # error not implemented
 rm -r tests/run-make/repr128-dwarf # debuginfo test
 rm -r tests/run-make/split-debuginfo # same
-rm -r tests/run-make/target-specs # i686 not supported by Cranelift
+rm -r tests/run-make/target-specs # i686 not supported by TPDE
 rm -r tests/run-make/mismatching-target-triples # same
 rm tests/ui/asm/x86_64/issue-96797.rs # const and sym inline asm operands don't work entirely correctly
 rm tests/ui/asm/global-asm-mono-sym-fn.rs # same
@@ -124,7 +124,6 @@ rm tests/ui/mir/mir_misc_casts.rs # depends on deduplication of constants
 rm tests/ui/mir/mir_raw_fat_ptr.rs # same
 rm tests/ui/consts/issue-33537.rs # same
 rm tests/ui/consts/const-mut-refs-crate.rs # same
-rm tests/ui/abi/large-byval-align.rs # exceeds implementation limit of Cranelift
 
 # doesn't work due to the way the rustc test suite is invoked.
 # should work when using ./x.py test the way it is intended
@@ -135,7 +134,7 @@ rm -r tests/run-make-cargo/compiler-builtins # Expects lib/rustlib/src/rust to c
 rm -r tests/run-make/translation # same
 rm -r tests/run-make-cargo/panic-immediate-abort-works # same
 rm -r tests/run-make-cargo/panic-immediate-abort-codegen # same
-rm -r tests/run-make/missing-unstable-trait-bound # This disables support for unstable features, but running cg_clif needs some unstable features
+rm -r tests/run-make/missing-unstable-trait-bound # This disables support for unstable features, but running cg_tpde needs some unstable features
 rm -r tests/run-make/const-trait-stable-toolchain # same
 rm -r tests/run-make/print-request-help-stable-unstable # same
 rm -r tests/run-make/incr-add-rust-src-component
@@ -161,7 +160,7 @@ rm -r tests/run-make-cargo/rustdoc-scrape-examples-paths # FIXME(rust-lang/rust#
 rm tests/ui/intrinsics/panic-uninitialized-zeroed.rs # really slow with unoptimized libstd
 rm tests/ui/process/process-panic-after-fork.rs # same
 
-cp ../dist/bin/rustdoc-clif ../dist/bin/rustdoc # some tests expect bin/rustdoc to exist
+cp ../dist/bin/rustdoc-tpde ../dist/bin/rustdoc # some tests expect bin/rustdoc to exist
 
 cat <<EOF | git apply -
 diff --git a/src/tools/compiletest/src/runtest/run_make.rs b/src/tools/compiletest/src/runtest/run_make.rs

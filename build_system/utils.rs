@@ -107,7 +107,7 @@ impl CargoProject {
             .arg(self.target_dir(dirs))
             .arg("--locked")
             // bootstrap sets both RUSTC and RUSTC_WRAPPER to the same wrapper. RUSTC is already
-            // respected by the rustc-clif wrapper, but RUSTC_WRAPPER will misinterpret rustc-clif
+            // respected by the rustc-tpde wrapper, but RUSTC_WRAPPER will misinterpret rustc-tpde
             // as filename, so we need to unset it.
             .env_remove("RUSTC_WRAPPER");
 

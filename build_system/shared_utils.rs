@@ -1,4 +1,4 @@
-// This file is used by both the build system as well as cargo-clif.rs
+// This file is used by both the build system as well as cargo-tpde.rs
 
 // Adapted from https://github.com/rust-lang/cargo/blob/6dc1deaddf62c7748c9097c7ea88e9ec77ff1a1a/src/cargo/core/compiler/build_context/target_info.rs#L750-L77
 pub(crate) fn rustflags_from_env(kind: &str) -> Vec<String> {

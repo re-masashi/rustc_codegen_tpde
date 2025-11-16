@@ -13,11 +13,10 @@ use crate::{CodegenBackend, SysrootKind, config};
 pub(crate) fn build_sysroot(
     dirs: &Dirs,
     sysroot_kind: SysrootKind,
-    cg_clif_dylib_src: &CodegenBackend,
+    cg_tpde_dylib_src: &CodegenBackend,
     bootstrap_host_compiler: &Compiler,
     rustup_toolchain_name: Option<&str>,
     target_triple: String,
-    panic_unwind_support: bool,
 ) -> Compiler {
     let _guard = LogGroup::guard("Build sysroot");
 
@@ -31,19 +30,19 @@ pub(crate) fn build_sysroot(
 
     let is_native = bootstrap_host_compiler.triple == target_triple;
 
-    let cg_clif_dylib_path = match cg_clif_dylib_src {
+    let cg_tpde_dylib_path = match cg_tpde_dylib_src {
         CodegenBackend::Local(src_path) => {
             // Copy the backend
-            let cg_clif_dylib_path = dist_dir.join("lib").join(src_path.file_name().unwrap());
-            try_hard_link(src_path, &cg_clif_dylib_path);
-            CodegenBackend::Local(cg_clif_dylib_path)
+            let cg_tpde_dylib_path = dist_dir.join("lib").join(src_path.file_name().unwrap());
+            try_hard_link(src_path, &cg_tpde_dylib_path);
+            CodegenBackend::Local(cg_tpde_dylib_path)
         }
         CodegenBackend::Builtin(name) => CodegenBackend::Builtin(name.clone()),
     };
 
     // Build and copy rustc and cargo wrappers
     let wrapper_base_name = get_file_name(&bootstrap_host_compiler.rustc, "____", "bin");
-    for wrapper in ["rustc-clif", "rustdoc-clif", "cargo-clif"] {
+    for wrapper in ["rustc-tpde", "rustdoc-tpde", "cargo-tpde"] {
         let wrapper_name = wrapper_base_name.replace("____", wrapper);
 
         let mut build_cargo_wrapper_cmd = Command::new(&bootstrap_host_compiler.rustc);
@@ -54,9 +53,6 @@ pub(crate) fn build_sysroot(
             .arg(&wrapper_path)
             .arg("-Cstrip=debuginfo")
             .arg("--check-cfg=cfg(support_panic_unwind)");
-        if panic_unwind_support {
-            build_cargo_wrapper_cmd.arg("--cfg").arg("support_panic_unwind");
-        }
         if let Some(rustup_toolchain_name) = &rustup_toolchain_name {
             build_cargo_wrapper_cmd
                 .env("TOOLCHAIN_NAME", rustup_toolchain_name)
@@ -70,7 +66,7 @@ pub(crate) fn build_sysroot(
                 .env("RUSTC", &bootstrap_host_compiler.rustc)
                 .env("RUSTDOC", &bootstrap_host_compiler.rustdoc);
         }
-        if let CodegenBackend::Builtin(name) = cg_clif_dylib_src {
+        if let CodegenBackend::Builtin(name) = cg_tpde_dylib_src {
             build_cargo_wrapper_cmd.env("BUILTIN_BACKEND", name);
         }
         spawn_and_wait(build_cargo_wrapper_cmd);
@@ -80,9 +76,8 @@ pub(crate) fn build_sysroot(
     let host = build_sysroot_for_triple(
         dirs,
         bootstrap_host_compiler.clone(),
-        &cg_clif_dylib_path,
+        &cg_tpde_dylib_path,
         sysroot_kind,
-        panic_unwind_support,
     );
     host.install_into_sysroot(dist_dir);
 
@@ -95,17 +90,16 @@ pub(crate) fn build_sysroot(
                 bootstrap_target_compiler.set_cross_linker_and_runner();
                 bootstrap_target_compiler
             },
-            &cg_clif_dylib_path,
+            &cg_tpde_dylib_path,
             sysroot_kind,
-            panic_unwind_support,
         )
         .install_into_sysroot(dist_dir);
     }
 
     let mut target_compiler = Compiler {
         cargo: bootstrap_host_compiler.cargo.clone(),
-        rustc: dist_dir.join(wrapper_base_name.replace("____", "rustc-clif")),
-        rustdoc: dist_dir.join(wrapper_base_name.replace("____", "rustdoc-clif")),
+        rustc: dist_dir.join(wrapper_base_name.replace("____", "rustc-tpde")),
+        rustdoc: dist_dir.join(wrapper_base_name.replace("____", "rustdoc-tpde")),
         rustflags: vec![],
         rustdocflags: vec![],
         triple: target_triple,
@@ -145,16 +139,13 @@ static STANDARD_LIBRARY: CargoProject =
 fn build_sysroot_for_triple(
     dirs: &Dirs,
     compiler: Compiler,
-    cg_clif_dylib_path: &CodegenBackend,
+    cg_tpde_dylib_path: &CodegenBackend,
     sysroot_kind: SysrootKind,
-    panic_unwind_support: bool,
 ) -> SysrootTarget {
     match sysroot_kind {
         SysrootKind::None => SysrootTarget { triple: compiler.triple, libs: vec![] },
         SysrootKind::Llvm => build_llvm_sysroot_for_triple(compiler),
-        SysrootKind::Clif => {
-            build_clif_sysroot_for_triple(dirs, compiler, cg_clif_dylib_path, panic_unwind_support)
-        }
+        SysrootKind::Tpde => build_tpde_sysroot_for_triple(dirs, compiler, cg_tpde_dylib_path),
     }
 }
 
@@ -192,11 +183,10 @@ fn build_llvm_sysroot_for_triple(compiler: Compiler) -> SysrootTarget {
     target_libs
 }
 
-fn build_clif_sysroot_for_triple(
+fn build_tpde_sysroot_for_triple(
     dirs: &Dirs,
     mut compiler: Compiler,
-    cg_clif_dylib_path: &CodegenBackend,
-    panic_unwind_support: bool,
+    cg_tpde_dylib_path: &CodegenBackend,
 ) -> SysrootTarget {
     let mut target_libs = SysrootTarget { triple: compiler.triple.clone(), libs: vec![] };
 
@@ -209,16 +199,13 @@ fn build_clif_sysroot_for_triple(
         apply_patches(dirs, "stdlib", &sysroot_src_orig, &STDLIB_SRC.to_path(dirs));
 
         // Cleanup the deps dir, but keep build scripts and the incremental cache for faster
-        // recompilation as they are not affected by changes in cg_clif.
+        // recompilation as they are not affected by changes in cg_tpde.
         ensure_empty_dir(&build_dir.join("deps"));
     }
 
     // Build sysroot
     let mut rustflags = vec!["-Zforce-unstable-if-unmarked".to_owned()];
-    if !panic_unwind_support {
-        rustflags.push("-Cpanic=abort".to_owned());
-    }
-    match cg_clif_dylib_path {
+    match cg_tpde_dylib_path {
         CodegenBackend::Local(path) => {
             rustflags.push(format!("-Zcodegen-backend={}", path.to_str().unwrap()));
         }
@@ -233,7 +220,7 @@ fn build_clif_sysroot_for_triple(
     // inlining.
     rustflags.push("-Zinline-mir".to_owned());
 
-    if let Some(prefix) = env::var_os("CG_CLIF_STDLIB_REMAP_PATH_PREFIX") {
+    if let Some(prefix) = env::var_os("CG_TPDE_STDLIB_REMAP_PATH_PREFIX") {
         rustflags.push("--remap-path-prefix".to_owned());
         rustflags.push(format!(
             "{}={}",
@@ -247,7 +234,7 @@ fn build_clif_sysroot_for_triple(
     build_cmd.arg("--features").arg("backtrace panic-unwind");
     build_cmd.arg(format!("-Zroot-dir={}", STDLIB_SRC.to_path(dirs).display()));
     build_cmd.env("CARGO_PROFILE_RELEASE_DEBUG", "true");
-    build_cmd.env("__CARGO_DEFAULT_LIB_METADATA", "cg_clif");
+    build_cmd.env("__CARGO_DEFAULT_LIB_METADATA", "cg_tpde");
     if compiler.triple.contains("apple") {
         build_cmd.env("CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO", "packed");
     }
@@ -256,7 +243,7 @@ fn build_clif_sysroot_for_triple(
     for entry in fs::read_dir(build_dir.join("deps")).unwrap() {
         let entry = entry.unwrap();
         if let Some(ext) = entry.path().extension() {
-            if ext == "rmeta" || ext == "d" || ext == "dSYM" || ext == "clif" {
+            if ext == "rmeta" || ext == "d" || ext == "dSYM" || ext == "tpde" {
                 continue;
             }
         } else {

@@ -35,8 +35,8 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
     };
 
     eprintln!("[BENCH COMPILE] ebobby/simple-raytracer");
-    let cargo_clif = &compiler.cargo;
-    let rustc_clif = &compiler.rustc;
+    let cargo_tpde = &compiler.cargo;
+    let rustc_tpde = &compiler.rustc;
     let rustflags = &compiler.rustflags.join("\x1f");
     let manifest_path = SIMPLE_RAYTRACER_REPO.source_dir().to_path(dirs).join("Cargo.toml");
     let target_dir = dirs.build_dir.join("simple_raytracer");
@@ -51,17 +51,17 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
         manifest_path = manifest_path.display(),
         target_dir = target_dir.display(),
     );
-    let clif_build_cmd = format!(
-        "RUSTC={rustc_clif} CARGO_ENCODED_RUSTFLAGS=\"{rustflags}\" {cargo_clif} build --manifest-path {manifest_path} --target-dir {target_dir} && (rm build/raytracer_cg_clif || true) && ln build/simple_raytracer/debug/main build/raytracer_cg_clif",
-        cargo_clif = cargo_clif.display(),
-        rustc_clif = rustc_clif.display(),
+    let tpde_build_cmd = format!(
+        "RUSTC={rustc_tpde} CARGO_ENCODED_RUSTFLAGS=\"{rustflags}\" {cargo_tpde} build --manifest-path {manifest_path} --target-dir {target_dir} && (rm build/raytracer_cg_tpde || true) && ln build/simple_raytracer/debug/main build/raytracer_cg_tpde",
+        cargo_tpde = cargo_tpde.display(),
+        rustc_tpde = rustc_tpde.display(),
         manifest_path = manifest_path.display(),
         target_dir = target_dir.display(),
     );
-    let clif_build_opt_cmd = format!(
-        "RUSTC={rustc_clif} CARGO_ENCODED_RUSTFLAGS=\"{rustflags}\" {cargo_clif} build --manifest-path {manifest_path} --target-dir {target_dir} --release && (rm build/raytracer_cg_clif_opt || true) && ln build/simple_raytracer/release/main build/raytracer_cg_clif_opt",
-        cargo_clif = cargo_clif.display(),
-        rustc_clif = rustc_clif.display(),
+    let tpde_build_opt_cmd = format!(
+        "RUSTC={rustc_tpde} CARGO_ENCODED_RUSTFLAGS=\"{rustflags}\" {cargo_tpde} build --manifest-path {manifest_path} --target-dir {target_dir} --release && (rm build/raytracer_cg_tpde_opt || true) && ln build/simple_raytracer/release/main build/raytracer_cg_tpde_opt",
+        cargo_tpde = cargo_tpde.display(),
+        rustc_tpde = rustc_tpde.display(),
         manifest_path = manifest_path.display(),
         target_dir = target_dir.display(),
     );
@@ -74,8 +74,8 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
         Some(&clean_cmd),
         &[
             ("cargo build", &llvm_build_cmd),
-            ("cargo-clif build", &clif_build_cmd),
-            ("cargo-clif build --release", &clif_build_opt_cmd),
+            ("cargo-tpde build", &tpde_build_cmd),
+            ("cargo-tpde build --release", &tpde_build_opt_cmd),
         ],
         &bench_compile_markdown,
     );
@@ -94,18 +94,18 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
 
     let raytracer_cg_llvm =
         Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_llvm", "bin"));
-    let raytracer_cg_clif =
-        Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_clif", "bin"));
-    let raytracer_cg_clif_opt =
-        Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_clif_opt", "bin"));
+    let raytracer_cg_tpde =
+        Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_tpde", "bin"));
+    let raytracer_cg_tpde_opt =
+        Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_tpde_opt", "bin"));
     let mut bench_run = hyperfine_command(
         0,
         bench_runs,
         None,
         &[
             ("", raytracer_cg_llvm.to_str().unwrap()),
-            ("", raytracer_cg_clif.to_str().unwrap()),
-            ("", raytracer_cg_clif_opt.to_str().unwrap()),
+            ("", raytracer_cg_tpde.to_str().unwrap()),
+            ("", raytracer_cg_tpde_opt.to_str().unwrap()),
         ],
         &bench_run_markdown,
     );
