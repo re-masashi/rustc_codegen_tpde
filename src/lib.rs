@@ -47,8 +47,19 @@ extern crate rustc_target;
 #[allow(unused_extern_crates)]
 extern crate rustc_driver;
 
+// tidy-alphabetical-start
+extern crate bitflags;
+extern crate gimli;
+extern crate itertools;
+extern crate libc;
 extern crate measureme;
+extern crate object;
+extern crate rustc_demangle;
+extern crate serde;
+extern crate serde_json;
 extern crate smallvec;
+extern crate tracing;
+// tidy-alphabetical-end
 
 use std::any::Any;
 use std::ffi::CStr;

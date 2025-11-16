@@ -10,27 +10,12 @@ crate-type = ["dylib"]
 
 [dependencies]
 # tidy-alphabetical-start
-bitflags = "2.4.1"
-# To avoid duplicate dependencies, this should match the version of gimli used
-# by `rustc_codegen_ssa` via its `thorin-dwp` dependency.
-gimli = "0.31"
-itertools = "0.12"
-libc = "0.2"
-object = { version = "0.37.0", default-features = false, features = [
-    "std",
-    "read",
-] }
-rustc-demangle = "0.1.21"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tracing = "0.1"
 # tidy-alphabetical-end
 
 [build-dependencies]
 # tidy-alphabetical-start
-# `cc` updates often break things, so we pin it here.
-cc = "=1.2.16"
-cmake = "=0.1.54"
+cc = "1.2.16"
+cmake = "0.1.54"
 # tidy-alphabetical-end
 
 [features]
