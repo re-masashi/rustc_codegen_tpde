@@ -15,3 +15,7 @@
 perf.data
 perf.data.old
 *.mm_profdata
+
+# Development environment
+.clangd
+compile_flags.txt
