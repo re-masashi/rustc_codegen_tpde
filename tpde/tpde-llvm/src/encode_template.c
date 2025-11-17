@@ -36,6 +36,11 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef __uint128_t u128;
 
+// Numeric limits
+const u128 UINT128_MAX = (u128)((i128)-1L);
+const i128 INT128_MAX = UINT128_MAX >> 1;
+const i128 INT128_MIN = -INT128_MAX - 1;
+
 #if defined(__LDBL_MANT_DIG__) && __LDBL_MANT_DIG__ == 113
 // IEEE-754 quad has 1 sign bit, 15 exponent bits, 113 mantissa bits
 typedef long double fp128;
@@ -363,6 +368,10 @@ u64 TARGET_V1 sat_add_u64(u64 a, u64 b) { u64 r; return __builtin_add_overflow(a
 u64 TARGET_V1 sat_sub_u64(u64 a, u64 b) { u64 r; return __builtin_sub_overflow(a, b, &r) ? 0 : r; }
 i64 TARGET_V1 sat_add_i64(i64 a, i64 b) { i64 r; return __builtin_add_overflow(a, b, &r) ? a < 0 ? INT64_MIN : INT64_MAX : r; }
 i64 TARGET_V1 sat_sub_i64(i64 a, i64 b) { i64 r; return __builtin_sub_overflow(a, b, &r) ? a < 0 ? INT64_MIN : INT64_MAX : r; }
+u128 TARGET_V1 sat_add_u128(u128 a, u128 b) { u128 r; return __builtin_add_overflow(a, b, &r) ? UINT128_MAX : r; }
+u128 TARGET_V1 sat_sub_u128(u128 a, u128 b) { u128 r; return __builtin_sub_overflow(a, b, &r) ? 0 : r; }
+i128 TARGET_V1 sat_add_i128(i128 a, i128 b) { i128 r; return __builtin_add_overflow(a, b, &r) ? a < 0 ? INT128_MIN : INT128_MAX : r; }
+i128 TARGET_V1 sat_sub_i128(i128 a, i128 b) { i128 r; return __builtin_sub_overflow(a, b, &r) ? a < 0 ? INT128_MIN : INT128_MAX : r; }
 
 // --------------------------
 // vector casts
