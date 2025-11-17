@@ -562,17 +562,37 @@ double TARGET_V1 maxnumf64(double a, double b) { return __builtin_fmax(a, b); }
 float TARGET_V1 f64tof32(double a) { return (float)(a); }
 double TARGET_V1 f32tof64(float a) { return (double)(a); }
 
+i8 TARGET_V1 f32toi8(float a) { return (i8)a; }
+u8 TARGET_V1 f32tou8(float a) { return (u8)a; }
+i16 TARGET_V1 f32toi16(float a) { return (i16)a; }
+u16 TARGET_V1 f32tou16(float a) { return (u16)a; }
 i32 TARGET_V1 f32toi32(float a) { return (i32)a; }
 u32 TARGET_V1 f32tou32(float a) { return (u32)a; }
 i64 TARGET_V1 f32toi64(float a) { return (i64)a; }
 u64 TARGET_V1 f32tou64(float a) { return (u64)a; }
+i128 TARGET_V1 f32toi128(float a) { return (i128)a; }
+u128 TARGET_V1 f32tou128(float a) { return (u128)a; }
+i8 TARGET_V1 f64toi8(double a) { return (i8)a; }
+u8 TARGET_V1 f64tou8(double a) { return (u8)a; }
+i16 TARGET_V1 f64toi16(double a) { return (i16)a; }
+u16 TARGET_V1 f64tou16(double a) { return (u16)a; }
 i32 TARGET_V1 f64toi32(double a) { return (i32)a; }
 u32 TARGET_V1 f64tou32(double a) { return (u32)a; }
 i64 TARGET_V1 f64toi64(double a) { return (i64)a; }
 u64 TARGET_V1 f64tou64(double a) { return (u64)a; }
+i128 TARGET_V1 f64toi128(double a) { return (i128)a; }
+u128 TARGET_V1 f64tou128(double a) { return (u128)a; }
 
 // Clang exposes these only under -fno-strict-float-cast-overflow, which would
 // inhibit better code generation for non-saturating conversions on x86-64.
+i8 TARGET_V1 llvm_fptosi_sat_i8_float(float) __asm__("llvm.fptosi.sat.i8.f32");
+i8 TARGET_V1 f32toi8_sat(float a) { return llvm_fptosi_sat_i8_float(a); }
+u8 TARGET_V1 llvm_fptoui_sat_u8_float(float) __asm__("llvm.fptoui.sat.i8.f32");
+u8 TARGET_V1 f32tou8_sat(float a) { return llvm_fptoui_sat_u8_float(a); }
+i16 TARGET_V1 llvm_fptosi_sat_i16_float(float) __asm__("llvm.fptosi.sat.i16.f32");
+i16 TARGET_V1 f32toi16_sat(float a) { return llvm_fptosi_sat_i16_float(a); }
+u16 TARGET_V1 llvm_fptoui_sat_u16_float(float) __asm__("llvm.fptoui.sat.i16.f32");
+u16 TARGET_V1 f32tou16_sat(float a) { return llvm_fptoui_sat_u16_float(a); }
 i32 TARGET_V1 llvm_fptosi_sat_i32_float(float) __asm__("llvm.fptosi.sat.i32.f32");
 i32 TARGET_V1 f32toi32_sat(float a) { return llvm_fptosi_sat_i32_float(a); }
 u32 TARGET_V1 llvm_fptoui_sat_i32_float(float) __asm__("llvm.fptoui.sat.i32.f32");
@@ -581,6 +601,14 @@ i64 TARGET_V1 llvm_fptosi_sat_i64_float(float) __asm__("llvm.fptosi.sat.i64.f32"
 i64 TARGET_V1 f32toi64_sat(float a) { return llvm_fptosi_sat_i64_float(a); }
 u64 TARGET_V1 llvm_fptoui_sat_i64_float(float) __asm__("llvm.fptoui.sat.i64.f32");
 u64 TARGET_V1 f32tou64_sat(float a) { return llvm_fptoui_sat_i64_float(a); }
+i8 TARGET_V1 llvm_fptosi_sat_i8_double(double) __asm__("llvm.fptosi.sat.i8.f64");
+i8 TARGET_V1 f64toi8_sat(double a) { return llvm_fptosi_sat_i8_double(a); }
+u8 TARGET_V1 llvm_fptoui_sat_u8_double(double) __asm__("llvm.fptoui.sat.i8.f64");
+u8 TARGET_V1 f64tou8_sat(double a) { return llvm_fptoui_sat_u8_double(a); }
+i8 TARGET_V1 llvm_fptosi_sat_i16_double(double) __asm__("llvm.fptosi.sat.i16.f64");
+i8 TARGET_V1 f64toi16_sat(double a) { return llvm_fptosi_sat_i16_double(a); }
+u8 TARGET_V1 llvm_fptoui_sat_u16_double(double) __asm__("llvm.fptoui.sat.i16.f64");
+u8 TARGET_V1 f64tou16_sat(double a) { return llvm_fptoui_sat_u16_double(a); }
 i32 TARGET_V1 llvm_fptosi_sat_i32_double(double) __asm__("llvm.fptosi.sat.i32.f64");
 i32 TARGET_V1 f64toi32_sat(double a) { return llvm_fptosi_sat_i32_double(a); }
 u32 TARGET_V1 llvm_fptoui_sat_i32_double(double) __asm__("llvm.fptoui.sat.i32.f64");
@@ -589,6 +617,61 @@ i64 TARGET_V1 llvm_fptosi_sat_i64_double(double) __asm__("llvm.fptosi.sat.i64.f6
 i64 TARGET_V1 f64toi64_sat(double a) { return llvm_fptosi_sat_i64_double(a); }
 u64 TARGET_V1 llvm_fptoui_sat_i64_double(double) __asm__("llvm.fptoui.sat.i64.f64");
 u64 TARGET_V1 f64tou64_sat(double a) { return llvm_fptoui_sat_i64_double(a); }
+
+const float TWO_POW_127_F32 = 170141183460469231731687303715884105728.0f;
+i128 TARGET_V1 f32toi128_sat(float a) {
+    if(__builtin_isnan(a)) {
+        return 0;
+    }
+    if(a >= TWO_POW_127_F32) {
+        return INT128_MAX;
+    }
+    if(a < -TWO_POW_127_F32) {
+        return INT128_MIN;
+    }
+    return (i128)a;
+}
+u128 TARGET_V1 f32tou128_sat(float a) { 
+    if(__builtin_isnan(a)) {
+        return 0;
+    }
+    if(a <= 0.0f) {
+        return 0;
+    }
+    if(__builtin_isinf_sign(a)) { // Values other than infinity will fit inside the range of a u128
+        return UINT128_MAX;
+    }
+
+    return (u128)a;
+}
+
+const double TWO_POW_127_F64 = 170141183460469231731687303715884105728.0;
+const double TWO_POW_128_F64 = 340282366920938463463374607431768211456.0;
+i128 TARGET_V1 f64toi128_sat(double a) {
+    if(__builtin_isnan(a)) {
+        return 0;
+    }
+    if(a >= TWO_POW_127_F64) {
+        return INT128_MAX;
+    }
+    if(a < -TWO_POW_127_F64) {
+        return INT128_MIN;
+    }
+    return (i128)a;
+}
+u128 TARGET_V1 f64tou128_sat(double a) { 
+    if(__builtin_isnan(a)) {
+        return 0;
+    }
+    if(a <= 0.0) {
+        return 0;
+    }
+    if(a >= TWO_POW_128_F64) {
+        return UINT128_MAX;
+    }
+
+    return (u128)a;
+}
 
 float TARGET_V1 i8tof32(u8 a) { return (float)(i8)a; }
 float TARGET_V1 i16tof32(u16 a) { return (float)(i16)a; }

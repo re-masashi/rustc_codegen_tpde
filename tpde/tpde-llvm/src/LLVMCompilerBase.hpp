@@ -2403,9 +2403,14 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_float_to_int(
   }
 
   const auto bit_width = inst->getType()->getIntegerBitWidth();
-
-  if (bit_width > 64) {
-    return false;
+  u32 width_idx = 0;
+  switch (bit_width) {
+  case 8: width_idx = 0; break;
+  case 16: width_idx = 1; break;
+  case 32: width_idx = 2; break;
+  case 64: width_idx = 3; break;
+  case 128: width_idx = 4; break;
+  default: return false;
   }
 
   if (src_ty->isFP128Ty()) {
@@ -2427,38 +2432,61 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_float_to_int(
 
   const auto src_double = src_ty->isDoubleTy();
 
-  using EncodeFnTy = bool (Derived::*)(GenericValuePart &&, ValuePart &&);
-  static constexpr auto fns = []() {
-    // fns[is_double][dst64][sign][sat]
-    std::array<EncodeFnTy[2][2][2], 2> fns{};
-    fns[0][0][0][0] = &Derived::encode_f32tou32;
-    fns[0][0][0][1] = &Derived::encode_f32tou32_sat;
-    fns[0][0][1][0] = &Derived::encode_f32toi32;
-    fns[0][0][1][1] = &Derived::encode_f32toi32_sat;
-    fns[0][1][0][0] = &Derived::encode_f32tou64;
-    fns[0][1][0][1] = &Derived::encode_f32tou64_sat;
-    fns[0][1][1][0] = &Derived::encode_f32toi64;
-    fns[0][1][1][1] = &Derived::encode_f32toi64_sat;
-    fns[1][0][0][0] = &Derived::encode_f64tou32;
-    fns[1][0][0][1] = &Derived::encode_f64tou32_sat;
-    fns[1][0][1][0] = &Derived::encode_f64toi32;
-    fns[1][0][1][1] = &Derived::encode_f64toi32_sat;
-    fns[1][1][0][0] = &Derived::encode_f64tou64;
-    fns[1][1][0][1] = &Derived::encode_f64tou64_sat;
-    fns[1][1][1][0] = &Derived::encode_f64toi64;
-    fns[1][1][1][1] = &Derived::encode_f64toi64_sat;
-    return fns;
-  }();
-  EncodeFnTy fn = fns[src_double][bit_width > 32][sign][saturate];
+#define FLOAT_ENCODE(src_width, dst_width, dst_idx)                            \
+  fns[(src_width - 32) / 32][dst_idx][0][0] =                                  \
+      &Derived::encode_f##src_width##tou##dst_width;                           \
+  fns[(src_width - 32) / 32][dst_idx][0][1] =                                  \
+      &Derived::encode_f##src_width##tou##dst_width##_sat;                     \
+  fns[(src_width - 32) / 32][dst_idx][1][0] =                                  \
+      &Derived::encode_f##src_width##toi##dst_width;                           \
+  fns[(src_width - 32) / 32][dst_idx][1][1] =                                  \
+      &Derived::encode_f##src_width##toi##dst_width##_sat;
 
-  if (saturate && bit_width % 32 != 0) {
-    // TODO: clamp result to smaller integer bounds
-    return false;
+  if (width_idx >= 4) {
+    using EncodeFnTy =
+        bool (Derived::*)(GenericValuePart &&, ValuePart &&, ValuePart &&);
+    static constexpr auto fns = []() {
+      // fns[is_double][width_idx][sign][sat]
+      std::array<EncodeFnTy[1][2][2], 2> fns{};
+      FLOAT_ENCODE(32, 128, 0);
+      FLOAT_ENCODE(64, 128, 0);
+      return fns;
+    }();
+    EncodeFnTy fn = fns[src_double][width_idx][sign][saturate];
+
+    if (saturate && bit_width != 128) {
+      return false;
+    }
+
+    auto src_ref = this->val_ref(src_val);
+    auto res_ref = this->result_ref(inst);
+    return (derived()->*fn)(src_ref.part(0), res_ref.part(0), res_ref.part(1));
+  } else {
+    using EncodeFnTy = bool (Derived::*)(GenericValuePart &&, ValuePart &&);
+    static constexpr auto fns = []() {
+      // fns[is_double][width_idx][sign][sat]
+      std::array<EncodeFnTy[4][2][2], 2> fns{};
+      FLOAT_ENCODE(32, 8, 0);
+      FLOAT_ENCODE(32, 16, 1);
+      FLOAT_ENCODE(32, 32, 2);
+      FLOAT_ENCODE(32, 64, 3);
+      FLOAT_ENCODE(64, 8, 0);
+      FLOAT_ENCODE(64, 16, 1);
+      FLOAT_ENCODE(64, 32, 2);
+      FLOAT_ENCODE(64, 64, 3);
+      return fns;
+    }();
+    EncodeFnTy fn = fns[src_double][width_idx][sign][saturate];
+
+    if (saturate && bit_width != 8 && bit_width != 32 && bit_width != 64) {
+      // TODO: clamp result to smaller integer bounds
+      return false;
+    }
+
+    auto src_ref = this->val_ref(src_val);
+    auto res_ref = this->result_ref(inst);
+    return (derived()->*fn)(src_ref.part(0), res_ref.part(0));
   }
-
-  auto src_ref = this->val_ref(src_val);
-  auto res_ref = this->result_ref(inst);
-  return (derived()->*fn)(src_ref.part(0), res_ref.part(0));
 }
 
 template <typename Adaptor, typename Derived, typename Config>
