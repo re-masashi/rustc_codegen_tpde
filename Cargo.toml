@@ -8,10 +8,6 @@ authors = ["TechnoPorg"]
 test = false
 crate-type = ["dylib"]
 
-[dependencies]
-# tidy-alphabetical-start
-# tidy-alphabetical-end
-
 [build-dependencies]
 # tidy-alphabetical-start
 cc = "1.2.16"

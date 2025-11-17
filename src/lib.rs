@@ -283,6 +283,10 @@ impl CodegenBackend for LlvmCodegenBackend {
     }
 
     fn init(&self, sess: &Session) {
+        if !(sess.opts.optimize == OptLevel::No || sess.opts.optimize == OptLevel::Less) {
+            sess.dcx()
+                .fatal("Optimization levels greater than 1 are not supported by the TPDE backend.")
+        }
         llvm_util::init(sess); // Make sure llvm is inited
     }
 
