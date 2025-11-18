@@ -444,7 +444,12 @@ fn main() {
     let mut cmd = Command::new(&llvm_config);
     cmd.arg("--cmakedir");
     let llvm_cmake_dir = output(&mut cmd);
-    let tpde_dst = cmake::Config::new("tpde").define("LLVM_DIR", llvm_cmake_dir.trim()).build();
+    let tpde_dst = cmake::Config::new("tpde")
+        .define("LLVM_DIR", llvm_cmake_dir.trim())
+        .define("CMAKE_CXX_COMPILER", "clang++")
+        .define("CMAKE_C_COMPILER", "clang")
+        .generator("Ninja")
+        .build();
     // Link TPDE dependencies
     println!("cargo:rustc-link-search=native={}/build/tpde/deps/disarm", tpde_dst.display());
     println!("cargo:rustc-link-lib=static=disarm64");
