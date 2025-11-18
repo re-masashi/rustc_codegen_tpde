@@ -229,6 +229,7 @@ void EncodingTargetArm64::get_inst_candidates(
                           std::span<const std::string> ops) {
           os << "    ASMD(" << mnem;
           unsigned reg_idx = 0;
+          std::string external_sym;
           for (unsigned i = 0, n = mi.getNumExplicitOperands(); i != n; i++) {
             const auto &op = mi.getOperand(i);
             if (op.isReg()) {
@@ -260,11 +261,20 @@ void EncodingTargetArm64::get_inst_candidates(
               } else {
                 os << ", " << op.getImm();
               }
+            } else if (op.isSymbol()) {
+              external_sym = op.getSymbolName();
+              os << ", 0";
             } else {
               assert(false);
             }
           }
           os << extra_ops << ");\n";
+          if (!external_sym.empty()) {
+            os << "    derived()->reloc_text(" << external_sym
+               << ", R_AARCH64_CALL26, " // TODO (mj): maybe handle other kinds
+                                         // of external symbols?
+               << "derived()->text_writer.offset() - 4);\n";
+          }
         });
   };
   const auto handle_noimm = [&](std::string_view mnem,
@@ -373,7 +383,19 @@ void EncodingTargetArm64::get_inst_candidates(
           handle_mem_simm(mnem, with_update);
         }
       };
+  case_mem_signed("STRWpre", "STRw_pre", true);
+  case_mem_signed("STRXpre", "STRx_pre", true);
+  case_mem_signed("STRBpre", "STRb_pre", true);
+  case_mem_signed("STRHpre", "STRh_pre", true);
+  case_mem_signed("STRSpre", "STRs_pre", true);
+  case_mem_signed("STRDpre", "STRd_pre", true);
   case_mem_signed("STRQpre", "STRq_pre", true);
+  case_mem_signed("LDRWpost", "LDRw_post", true);
+  case_mem_signed("LDRXpost", "LDRx_post", true);
+  case_mem_signed("LDRBpost", "LDRb_post", true);
+  case_mem_signed("LDRHpost", "LDRh_post", true);
+  case_mem_signed("LDRSpost", "LDRs_post", true);
+  case_mem_signed("LDRDpost", "LDRd_post", true);
   case_mem_signed("LDRQpost", "LDRq_post", true);
 
   case_default("LDPWi", "LDPw");    // TODO: expr with base+off, merge offsets
@@ -582,7 +604,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("FCSELSrrr", "FCSELs");
   case_default("FCSELDrrr", "FCSELd");
   case_default("FCMPSrr", "FCMP_s");
+  case_default("FCMPSri", "FCMP_0s");
   case_default("FCMPDrr", "FCMP_d");
+  case_default("FCMPDri", "FCMP_0d");
   case_default("FADDSrr", "FADDs");
   case_default("FADDDrr", "FADDd");
   case_default("FSUBSrr", "FSUBs");
@@ -1050,6 +1074,8 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("STLRX", "STLRx");
 
   case_default("BRK", "BRK");
+
+  case_default("BL", "BL");
 
   if (candidates.empty()) {
     llvm::errs() << "ERROR: unhandled instruction " << Name << "\n";

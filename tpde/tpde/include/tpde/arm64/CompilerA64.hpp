@@ -39,38 +39,38 @@ namespace tpde::a64 {
 
 struct AsmReg : Reg {
   enum REG : u8 {
-    R0 = 0,
-    R1,
-    R2,
-    R3,
-    R4,
-    R5,
-    R6,
-    R7,
-    R8,
-    R9,
-    R10,
-    R11,
-    R12,
-    R13,
-    R14,
-    R15,
-    R16,
-    R17,
-    R18,
-    R19,
-    R20,
-    R21,
-    R22,
-    R23,
-    R24,
-    R25,
-    R26,
-    R27,
-    R28,
-    R29,
+    X0 = 0,
+    X1,
+    X2,
+    X3,
+    X4,
+    X5,
+    X6,
+    X7,
+    X8,
+    X9,
+    X10,
+    X11,
+    X12,
+    X13,
+    X14,
+    X15,
+    X16,
+    X17,
+    X18,
+    X19,
+    X20,
+    X21,
+    X22,
+    X23,
+    X24,
+    X25,
+    X26,
+    X27,
+    X28,
+    X29,
     FP = 29,
-    R30,
+    X30,
     LR = 30,
     SP = 31,
 
@@ -168,19 +168,19 @@ class CCAssignerAAPCS : public CCAssigner {
       // we reserve SP,FP,R16 and R17 for our special use cases
       .allocatable_regs =
           0xFFFF'FFFF'FFFF'FFFF &
-          ~create_bitmask({AsmReg::SP, AsmReg::FP, AsmReg::R16, AsmReg::R17}),
+          ~create_bitmask({AsmReg::SP, AsmReg::FP, AsmReg::X16, AsmReg::X17}),
       // callee-saved registers
       .callee_saved_regs = create_bitmask({
-          AsmReg::R19,
-          AsmReg::R20,
-          AsmReg::R21,
-          AsmReg::R22,
-          AsmReg::R23,
-          AsmReg::R24,
-          AsmReg::R25,
-          AsmReg::R26,
-          AsmReg::R27,
-          AsmReg::R28,
+          AsmReg::X19,
+          AsmReg::X20,
+          AsmReg::X21,
+          AsmReg::X22,
+          AsmReg::X23,
+          AsmReg::X24,
+          AsmReg::X25,
+          AsmReg::X26,
+          AsmReg::X27,
+          AsmReg::X28,
           AsmReg::V8,
           AsmReg::V9,
           AsmReg::V10,
@@ -191,15 +191,15 @@ class CCAssignerAAPCS : public CCAssigner {
           AsmReg::V15,
       }),
       .arg_regs = create_bitmask({
-          AsmReg::R0,
-          AsmReg::R1,
-          AsmReg::R2,
-          AsmReg::R3,
-          AsmReg::R4,
-          AsmReg::R5,
-          AsmReg::R6,
-          AsmReg::R7,
-          AsmReg::R8, // sret register
+          AsmReg::X0,
+          AsmReg::X1,
+          AsmReg::X2,
+          AsmReg::X3,
+          AsmReg::X4,
+          AsmReg::X5,
+          AsmReg::X6,
+          AsmReg::X7,
+          AsmReg::X8, // sret register
           AsmReg::V0,
           AsmReg::V1,
           AsmReg::V2,
@@ -233,7 +233,7 @@ public:
     }
 
     if (arg.sret) [[unlikely]] {
-      arg.reg = AsmReg{AsmReg::R8};
+      arg.reg = AsmReg{AsmReg::X8};
       return;
     }
 
@@ -242,7 +242,7 @@ public:
         ngrn = util::align_up(ngrn, 2);
       }
       if (ngrn + arg.consecutive < 8) {
-        arg.reg = Reg{AsmReg::R0 + ngrn};
+        arg.reg = Reg{AsmReg::X0 + ngrn};
         ngrn += 1;
       } else {
         ngrn = 8;
@@ -273,7 +273,7 @@ public:
         ret_ngrn = util::align_up(ret_ngrn, 2);
       }
       if (ret_ngrn + arg.consecutive < 8) {
-        arg.reg = Reg{AsmReg::R0 + ret_ngrn};
+        arg.reg = Reg{AsmReg::X0 + ret_ngrn};
         ret_ngrn += 1;
       } else {
         assert(false);
@@ -358,7 +358,7 @@ struct CompilerA64 : BaseTy<Adaptor, Derived, Config> {
   // Additionally, we prevent R0 and R1 from being fixed assignments to
   // prevent issues with exception handling
   u64 fixed_assignment_nonallocatable_mask =
-      create_bitmask({AsmReg::R0, AsmReg::R1});
+      create_bitmask({AsmReg::X0, AsmReg::X1});
   u32 func_start_off = 0u, func_prologue_alloc = 0u;
   /// Offset to the `add sp, sp, XXX` instruction that the argument handling
   /// uses to access stack arguments if needed
@@ -367,7 +367,7 @@ struct CompilerA64 : BaseTy<Adaptor, Derived, Config> {
 
   /// Permanent scratch register, e.g. to materialize constants/offsets. This is
   /// used by materialize_constant, load_from_stack, spill_reg.
-  AsmReg permanent_scratch_reg = AsmReg::R16;
+  AsmReg permanent_scratch_reg = AsmReg::X16;
 
   u32 scalar_arg_count = 0xFFFF'FFFF, vec_arg_count = 0xFFFF'FFFF;
   u32 reg_save_frame_off = 0;
@@ -425,7 +425,7 @@ struct CompilerA64 : BaseTy<Adaptor, Derived, Config> {
 
   GenericValuePart val_spill_slot(AssignmentPartRef ap) noexcept {
     assert(ap.stack_valid() && !ap.variable_ref());
-    return typename GenericValuePart::Expr(AsmReg::R29, ap.frame_off());
+    return typename GenericValuePart::Expr(AsmReg::X29, ap.frame_off());
   }
 
   AsmReg gval_expr_as_reg(GenericValuePart &gv) noexcept;
@@ -624,7 +624,7 @@ template <IRAdaptor Adaptor,
 void CompilerA64<Adaptor, Derived, BaseTy, Config>::CallBuilder::add_arg_byval(
     ValuePart &vp, CCAssignment &cca) noexcept {
   AsmReg ptr_reg = vp.load_to_reg(&this->compiler);
-  AsmReg tmp_reg = AsmReg::R16;
+  AsmReg tmp_reg = AsmReg::X16;
 
   auto size = cca.size;
   set_stack_used();
@@ -834,7 +834,7 @@ void CompilerA64<Adaptor, Derived, BaseTy, Config>::gen_func_prolog_and_args(
           AsmReg dst = vp.alloc_reg(this);
 
           this->text_writer.ensure_space(8);
-          AsmReg stack_reg = AsmReg::R17;
+          AsmReg stack_reg = AsmReg::X17;
           // TODO: allocate an actual scratch register for this.
           assert(
               !(this->register_file.allocatable & (u64{1} << stack_reg.id())) &&
@@ -878,7 +878,7 @@ void CompilerA64<Adaptor, Derived, BaseTy, Config>::gen_func_prolog_and_args(
   // so use it for var args.
   if (this->adaptor->cur_is_vararg()) [[unlikely]] {
     this->stack.frame_used = true;
-    AsmReg stack_reg = AsmReg::R17;
+    AsmReg stack_reg = AsmReg::X17;
     // TODO: allocate an actual scratch register for this.
     assert(!(this->register_file.allocatable & (u64{1} << stack_reg.id())) &&
            "x17 must not be allocatable");
@@ -1164,7 +1164,7 @@ void CompilerA64<Adaptor, Derived, BaseTy, Config>::spill_reg(
   }
 
   assert(-static_cast<i32>(frame_off) < 0);
-  if (reg.id() <= AsmReg::R30) {
+  if (reg.id() <= AsmReg::X30) {
     switch (size) {
     case 1: ASMNC(STRBu, reg, addr_base, off); break;
     case 2: ASMNC(STRHu, reg, addr_base, off); break;
@@ -1204,12 +1204,12 @@ void CompilerA64<Adaptor, Derived, BaseTy, Config>::load_from_stack(
   auto addr_base = AsmReg{AsmReg::FP};
   if (off >= 0x1000 * size) [[unlikely]] {
     // need to calculate this explicitly
-    addr_base = dst.id() <= AsmReg::R30 ? dst : permanent_scratch_reg;
+    addr_base = dst.id() <= AsmReg::X30 ? dst : permanent_scratch_reg;
     ASMNC(ADDxi, addr_base, DA_GP(29), off & ~0xfff);
     off &= 0xfff;
   }
 
-  if (dst.id() <= AsmReg::R30) {
+  if (dst.id() <= AsmReg::X30) {
     if (!sign_extend) {
       switch (size) {
       case 1: ASMNC(LDRBu, dst, addr_base, off); break;
@@ -1287,7 +1287,7 @@ void CompilerA64<Adaptor, Derived, BaseTy, Config>::mov(
     }
   } else {
     // vector<-gp
-    assert(src.id() <= AsmReg::R30);
+    assert(src.id() <= AsmReg::X30);
     assert(dst.id() >= AsmReg::V0);
     assert(size <= 8);
     if (size <= 4) {
@@ -2091,9 +2091,9 @@ CompilerA64<Adaptor, Derived, BaseTy, Config>::ScratchReg
     assert(!this->stack.is_leaf_function);
     this->stack.generated_call = true;
     ScratchReg r0_scratch{this};
-    AsmReg r0 = r0_scratch.alloc_specific(AsmReg::R0);
+    AsmReg r0 = r0_scratch.alloc_specific(AsmReg::X0);
     ScratchReg r1_scratch{this};
-    AsmReg r1 = r1_scratch.alloc_specific(AsmReg::R1);
+    AsmReg r1 = r1_scratch.alloc_specific(AsmReg::X1);
     // The call only clobbers flags, x0, x1, and lr. x0 and x1 are already fixed
     // in the scratch registers, so only make sure that lr isn't used otherwise.
     if (this->register_file.is_used(Reg{AsmReg::LR})) {

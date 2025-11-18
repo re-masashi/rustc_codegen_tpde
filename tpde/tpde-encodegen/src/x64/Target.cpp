@@ -318,6 +318,7 @@ void EncodingTargetX64::get_inst_candidates(
           os << "    ASMD(" << mnem;
           unsigned reg_idx = 0;
           std::string_view cp_sym = "";
+          std::string_view external_sym = "";
           [[maybe_unused]] bool has_imm = false;
           for (unsigned i = 0, n = mi.getNumExplicitOperands(); i != n; i++) {
             const auto &op = mi.getOperand(i);
@@ -353,6 +354,17 @@ void EncodingTargetX64::get_inst_candidates(
               }
               has_imm = true;
               os << ", " << std::format("{:#x}", op.getImm());
+            } else if (op.isSymbol()) {
+              external_sym = op.getSymbolName();
+              os << ", derived()->text_writer.cur_ptr()";
+            } else {
+              std::string op_string;
+              llvm::raw_string_ostream op_string_stream(op_string);
+              op.print(op_string_stream);
+              llvm::errs() << "Unsupported explicit operand in instruction: "
+                           << op_string << "\n";
+              assert(false);
+              exit(1);
             }
           }
           os << extra_ops << ");\n";
@@ -362,6 +374,15 @@ void EncodingTargetX64::get_inst_candidates(
                   "derived()->reloc_text("
                << cp_sym
                << ", R_X86_64_PC32, "
+                  "derived()->text_writer.offset() - 4, -4);\n";
+          }
+          if (!external_sym.empty()) {
+            assert(!has_imm && "External symbol with imm unsupported!");
+            os << "        "
+                  "derived()->reloc_text("
+               << external_sym
+               << ", R_X86_64_PLT32, " // Todo (mj): this should actually use
+                                       // the target flags for plt/got/pc
                   "derived()->text_writer.offset() - 4, -4);\n";
           }
         });
@@ -459,6 +480,17 @@ void EncodingTargetX64::get_inst_candidates(
   };
 
   // clang-format off
+  handle_rm("PUSH64r", "PUSH64rmm", 0, "PUSHr", "PUSHm");
+  handle_rmi("PUSH32r", "PUSH32rmm", "PUSH32i", 0, "PUSH32r", "PUSH32m", "PUSHi");
+  handle_rmi("PUSH16r", "PUSH16rmm", "PUSH16i", 0, "PUSH16r", "PUSH16m", "PUSH16r");
+  handle_rm("POP64r", "POP64rmm", 0, "POPr", "POPm");
+  handle_rmi("POP32r", "POP32rmm", "POP32i", 0, "POP32r", "POP32m", "POPi");
+  handle_rmi("POP16r", "POP16rmm", "POP16i", 0, "POP16r", "POP16m", "POP16r");
+
+  if(Name == "CALL64pcrel32") {
+    handle_default("CALL");
+  }
+  
   handle_rm("MOVZX32rr8", "MOVZX32rm8", 1, "MOVZXr32r8", "MOVZXr32m8");
   handle_rm("MOVZX32rr16", "MOVZX32rm16", 1, "MOVZXr32r16", "MOVZXr32m16");
   handle_rm("MOVSX32rr8", "MOVSX32rm8", 1, "MOVSXr32r8", "MOVSXr32m8");

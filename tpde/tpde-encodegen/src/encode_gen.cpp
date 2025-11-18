@@ -64,6 +64,7 @@ struct GenerationState {
   std::vector<unsigned> return_regs = {};
   unsigned &sym_count;
   std::unordered_map<unsigned, unsigned> const_pool_indices_used = {};
+  std::unordered_map<std::string, unsigned> external_symbols = {};
 
   // Conditions on which fixed registers depend
   std::vector<std::string> asm_operand_early_conds;
@@ -94,6 +95,9 @@ struct GenerationState {
   void generate_cp_entry_sym(llvm::raw_ostream &os,
                              std::string_view sym_name,
                              unsigned cp_idx);
+
+  void generate_external_entry_sym(llvm::raw_ostream &os,
+                                   std::string_view sym_name);
 
   void handle_terminator(llvm::raw_ostream &os, llvm::MachineInstr *inst);
 
@@ -205,6 +209,21 @@ void GenerationState::generate_cp_entry_sym(llvm::raw_ostream &os,
   os << "      auto sec = derived()->assembler.get_data_section(true);\n";
   os << "      " << sym_name << " = derived()->assembler.sym_def_data(sec, "
      << "\"\", data, " << align << ", Assembler::SymBinding::LOCAL);\n";
+  os << "    }\n";
+}
+
+void GenerationState::generate_external_entry_sym(llvm::raw_ostream &os,
+                                                  std::string_view sym_name) {
+  auto [it, inserted] = external_symbols.emplace(sym_name, sym_count);
+  if (inserted) {
+    sym_count += 1;
+  }
+
+  os << "// Definition of external symbol " << sym_name << "\n";
+  os << "    auto &" << sym_name << " = symbols[" << it->second << "];\n";
+  os << "    if (!" << sym_name << ".valid()) [[unlikely]] {\n";
+  os << "      " << sym_name << " = derived()->assembler.sym_add_undef("
+     << "\"" << sym_name << "\", Assembler::SymBinding::GLOBAL);\n";
   os << "    }\n";
 }
 
@@ -389,6 +408,15 @@ bool generate_inst(std::string &buf,
         use_ops.push_back(var_name);
         llvm::raw_string_ostream os(buf);
         state.generate_cp_entry_sym(os, var_name, use.getIndex());
+        continue;
+      }
+
+      if (use.isSymbol()) {
+        assert(use.getOffset() == 0);
+        std::string sym_name = use.getSymbolName();
+        use_ops.push_back(sym_name);
+        llvm::raw_string_ostream os(buf);
+        state.generate_external_entry_sym(os, sym_name);
         continue;
       }
 

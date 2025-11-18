@@ -52,8 +52,8 @@ struct LLVMCompilerArm64 : tpde::a64::CompilerA64<LLVMAdaptor,
 
   std::variant<std::monostate, tpde::a64::CCAssignerAAPCS> cc_assigners;
 
-  static constexpr std::array<AsmReg, 2> LANDING_PAD_RES_REGS = {AsmReg::R0,
-                                                                 AsmReg::R1};
+  static constexpr std::array<AsmReg, 2> LANDING_PAD_RES_REGS = {AsmReg::X0,
+                                                                 AsmReg::X1};
 
   explicit LLVMCompilerArm64(std::unique_ptr<LLVMAdaptor> &&adaptor)
       : Base{adaptor.get()}, adaptor(std::move(adaptor)) {
@@ -492,7 +492,7 @@ void LLVMCompilerArm64::compile_i32_cmp_zero(
 
 LLVMCompilerArm64::GenericValuePart LLVMCompilerArm64::create_addr_for_alloca(
     tpde::AssignmentPartRef ap) noexcept {
-  return GenericValuePart::Expr{AsmReg::R29, ap.variable_stack_off()};
+  return GenericValuePart::Expr{AsmReg::X29, ap.variable_stack_off()};
 }
 
 void LLVMCompilerArm64::create_helper_call(std::span<IRValueRef> args,
