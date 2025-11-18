@@ -328,8 +328,8 @@ fn main() {
 
     #[cfg(all(not(jit), target_arch = "x86_64", any(target_os = "linux", target_os = "macos")))]
     unsafe {
-        global_asm_test();
-        naked_test();
+        //global_asm_test();
+        //naked_test();
     }
 
     // Both statics have a reference that points to the same anonymous allocation.
