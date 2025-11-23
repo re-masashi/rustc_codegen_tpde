@@ -2,10 +2,12 @@
 //
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include <iostream>
 #include <llvm/IR/InlineAsm.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/IntrinsicsX86.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/TargetParser/Triple.h>
 
 #include "LLVMAdaptor.hpp"
@@ -185,7 +187,7 @@ bool LLVMCompilerX64::compile_inline_asm(const llvm::CallBase *call) noexcept {
   auto inline_asm = llvm::cast<llvm::InlineAsm>(call->getCalledOperand());
   // TODO: handle inline assembly that actually does something
   if (!inline_asm->getAsmString().empty() || inline_asm->isAlignStack() ||
-      !call->getType()->isVoidTy() || call->arg_size() != 0) {
+      !call->getType()->isVoidTy()) {
     return false;
   }
 
