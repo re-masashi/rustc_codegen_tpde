@@ -2635,43 +2635,76 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_trunc(
 
 template <typename Adaptor, typename Derived, typename Config>
 bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_ext(
-    const llvm::Instruction *inst, const ValInfo &, u64 sign) noexcept {
-  if (!inst->getType()->isIntegerTy()) {
-    return false;
-  }
+    const llvm::Instruction *inst, const ValInfo &info, u64 sign) noexcept {
+  auto parts = this->adaptor->val_parts(info);
 
   auto *src_val = inst->getOperand(0);
-
+  ValueRef res = this->result_ref(inst);
   unsigned src_width = src_val->getType()->getIntegerBitWidth();
   unsigned dst_width = inst->getType()->getIntegerBitWidth();
   assert(dst_width >= src_width);
+  auto handle_part =
+      [this, src_width, dst_width, sign](
+          ValuePartRef &&low, ValuePartRef &res_low, ValuePartRef &res_high) {
+        if (src_width < 64) {
+          unsigned ext_width = dst_width <= 64 ? dst_width : 64;
+          low = std::move(low).into_extended(sign, src_width, ext_width);
+        } else if (src_width > 64) {
+          return false;
+        }
 
-  auto src_ref = this->val_ref(src_val);
+        if (dst_width == 128) {
+          if (sign) {
+            if (!low.has_reg()) {
+              low.load_to_reg();
+            }
+            derived()->encode_fill_with_sign64(low.get_unowned_ref(), res_high);
+          } else {
+            res_high.set_value(ValuePart{u64{0}, 8, res_high.bank()});
+          }
+        }
 
-  ValuePartRef low = src_ref.part(0);
-  if (src_width < 64) {
-    unsigned ext_width = dst_width <= 64 ? dst_width : 64;
-    low = std::move(low).into_extended(sign, src_width, ext_width);
-  } else if (src_width > 64) {
-    return false;
-  }
+        res_low.set_value(std::move(low));
+        return true;
+      };
 
-  auto res = this->result_ref(inst);
+  ValueRef src_ref = this->val_ref(src_val);
 
-  if (dst_width == 128) {
-    auto res_ref_high = res.part(1);
-
-    if (sign) {
-      if (!low.has_reg()) {
-        low.load_to_reg();
+  for (u32 i = 0, n = parts.count(); i != n; ++i) {
+    if (inst->getType()->isIntegerTy()) [[likely]] {
+      ValuePartRef res_low = res.part(0);
+      ValuePartRef res_high = res.part(1);
+      if (!handle_part(std::move(src_ref.part(0)), res_low, res_high)) {
+        return false;
       }
-      derived()->encode_fill_with_sign64(low.get_unowned_ref(), res_ref_high);
-    } else {
-      res_ref_high.set_value(ValuePart{u64{0}, 8, res_ref_high.bank()});
+      continue;
+    }
+
+    // This is a legal vector type.
+    // Extract elements individually and use scalar functions.
+    LLVMBasicValType ty = parts.type(i);
+    if (!inst->getType()->isVectorTy() ||
+        dst_width == 128 /*can't handle 128-bit vector types*/) {
+      return false;
+    }
+    auto [elem_cnt, elem_ty] = basic_ty_vector_info(ty);
+    tpde::RegBank bank = this->adaptor->basic_ty_part_bank(elem_ty);
+    for (u32 j = 0; j != elem_cnt; ++j) {
+      u32 elem_idx = i * elem_cnt + j;
+      ValuePartRef e_res_low{this, bank};
+      ValuePartRef e_src{this, bank};
+      // TODO: we might pass the last element as owned. But this code is
+      // fallback only, so don't bother optimizing.
+      ValueRef src_unowned = src_ref.disowned();
+      derived()->extract_element(src_unowned, elem_idx, elem_ty, e_src);
+      if (!handle_part(std::move(e_src), e_res_low, e_res_low)) {
+        return false;
+      }
+      // insert_element always treats res as unowned.
+      derived()->insert_element(res, elem_idx, elem_ty, std::move(e_res_low));
     }
   }
 
-  res.part(0).set_value(std::move(low));
   return true;
 }
 
