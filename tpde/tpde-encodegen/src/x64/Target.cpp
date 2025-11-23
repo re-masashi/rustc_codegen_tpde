@@ -318,7 +318,6 @@ void EncodingTargetX64::get_inst_candidates(
           os << "    ASMD(" << mnem;
           unsigned reg_idx = 0;
           std::string_view cp_sym = "";
-          std::string_view external_sym = "";
           [[maybe_unused]] bool has_imm = false;
           for (unsigned i = 0, n = mi.getNumExplicitOperands(); i != n; i++) {
             const auto &op = mi.getOperand(i);
@@ -354,17 +353,6 @@ void EncodingTargetX64::get_inst_candidates(
               }
               has_imm = true;
               os << ", " << std::format("{:#x}", op.getImm());
-            } else if (op.isSymbol()) {
-              external_sym = op.getSymbolName();
-              os << ", derived()->text_writer.cur_ptr()";
-            } else {
-              std::string op_string;
-              llvm::raw_string_ostream op_string_stream(op_string);
-              op.print(op_string_stream);
-              llvm::errs() << "Unsupported explicit operand in instruction: "
-                           << op_string << "\n";
-              assert(false);
-              exit(1);
             }
           }
           os << extra_ops << ");\n";
@@ -374,15 +362,6 @@ void EncodingTargetX64::get_inst_candidates(
                   "derived()->reloc_text("
                << cp_sym
                << ", R_X86_64_PC32, "
-                  "derived()->text_writer.offset() - 4, -4);\n";
-          }
-          if (!external_sym.empty()) {
-            assert(!has_imm && "External symbol with imm unsupported!");
-            os << "        "
-                  "derived()->reloc_text("
-               << external_sym
-               << ", R_X86_64_PLT32, " // Todo (mj): this should actually use
-                                       // the target flags for plt/got/pc
                   "derived()->text_writer.offset() - 4, -4);\n";
           }
         });
@@ -487,9 +466,14 @@ void EncodingTargetX64::get_inst_candidates(
   handle_rmi("POP32r", "POP32rmm", "POP32i", 0, "POP32r", "POP32m", "POPi");
   handle_rmi("POP16r", "POP16rmm", "POP16i", 0, "POP16r", "POP16m", "POP16r");
 
-  if(Name == "CALL64pcrel32") {
-    handle_default("CALL");
+  if(Name == "VPANDDZ128rmb") {
+    handle_default("VPANDD128rrr");
   }
+  else if(Name == "VPANDQZ128rmb") {
+    handle_default("VPANDQ128rrr");
+  }
+
+  handle_rm("BZHI64rr", "BZHI64rm", 1, "BZHI64rrr", "BZHI64rmr");
   
   handle_rm("MOVZX32rr8", "MOVZX32rm8", 1, "MOVZXr32r8", "MOVZXr32m8");
   handle_rm("MOVZX32rr16", "MOVZX32rm16", 1, "MOVZXr32r16", "MOVZXr32m16");
@@ -588,6 +572,10 @@ void EncodingTargetX64::get_inst_candidates(
   handle_ri("BTR32rr", "BTR32ri", 2, -1, "BTR32rr", "BTR32ri");
   handle_ri("BTR64rr", "BTR64ri32", 2, -1, "BTR64rr", "BTR64ri");
 
+  handle_ri_shift("SHRX32rr", "SHRX32ri", 3, -1, "SHRX32rrr", "SHRX32rrm");
+  handle_ri_shift("SHRX64rr", "SHRX64ri", 3, -1, "SHRX64rrr", "SHRX64rrm");
+  handle_ri_shift("SHLX32rr", "SHLX32ri", 3, -1, "SHLX32rrr", "SHLX32rrm");
+  handle_ri_shift("SHLX64rr", "SHLX64ri", 3, -1, "SHLX64rrr", "SHLX64rrm");
   handle_ri_shift("SHR8rCL", "SHR8ri", 3, -1, "SHR8rr", "SHR8ri");
   handle_ri_shift("SHR16rCL", "SHR16ri", 3, -1, "SHR16rr", "SHR16ri");
   handle_ri_shift("SHR32rCL", "SHR32ri", 3, -1, "SHR32rr", "SHR32ri");
@@ -618,6 +606,7 @@ void EncodingTargetX64::get_inst_candidates(
   handle_rm("MUL8r", "MUL8m", 0, "MUL8r", "MUL8m");
   handle_rm("MUL16r", "MUL16m", 0, "MUL16r", "MUL16m");
   handle_rm("MUL32r", "MUL32m", 0, "MUL32r", "MUL32m");
+  handle_rm("MULX64rr", "MULX64rm", 0, "MULX64rrr", "MULX64rrm");
   handle_rm("MUL64r", "MUL64m", 0, "MUL64r", "MUL64m");
   handle_rm("IMUL8r", "IMUL8m", 0, "IMUL8r", "IMUL8m");
   handle_rm("IMUL16r", "IMUL16m", 0, "IMUL16r", "IMUL16m");
@@ -822,6 +811,12 @@ void EncodingTargetX64::get_inst_candidates(
     handle_default("VMOVUPS256mr", 0);
   } else if (Name == "VMOVUPSZmr") {
     handle_default("VMOVUPS512mr", 0);
+  } else if (Name == "VMOVSS2DIrr") {
+    handle_default("VMOVSSrr");
+  } else if (Name == "VMOVPDI2DIrr") {
+    handle_default("VMOVUPD128rr");
+  } else if (Name == "VMOVSDto64rr") {
+    handle_default("VMOVSDrrr");
 
   } else if (Name == "CVTSD2SSrr") {
     handle_memrepl("SSE_CVTSD2SSrm", 1);

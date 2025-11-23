@@ -229,7 +229,6 @@ void EncodingTargetArm64::get_inst_candidates(
                           std::span<const std::string> ops) {
           os << "    ASMD(" << mnem;
           unsigned reg_idx = 0;
-          std::string external_sym;
           for (unsigned i = 0, n = mi.getNumExplicitOperands(); i != n; i++) {
             const auto &op = mi.getOperand(i);
             if (op.isReg()) {
@@ -261,20 +260,11 @@ void EncodingTargetArm64::get_inst_candidates(
               } else {
                 os << ", " << op.getImm();
               }
-            } else if (op.isSymbol()) {
-              external_sym = op.getSymbolName();
-              os << ", 0";
             } else {
               assert(false);
             }
           }
           os << extra_ops << ");\n";
-          if (!external_sym.empty()) {
-            os << "    derived()->reloc_text(" << external_sym
-               << ", R_AARCH64_CALL26, " // TODO (mj): maybe handle other kinds
-                                         // of external symbols?
-               << "derived()->text_writer.offset() - 4);\n";
-          }
         });
   };
   const auto handle_noimm = [&](std::string_view mnem,

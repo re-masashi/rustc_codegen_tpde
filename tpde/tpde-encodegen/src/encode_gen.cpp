@@ -64,7 +64,6 @@ struct GenerationState {
   std::vector<unsigned> return_regs = {};
   unsigned &sym_count;
   std::unordered_map<unsigned, unsigned> const_pool_indices_used = {};
-  std::unordered_map<std::string, unsigned> external_symbols = {};
 
   // Conditions on which fixed registers depend
   std::vector<std::string> asm_operand_early_conds;
@@ -95,9 +94,6 @@ struct GenerationState {
   void generate_cp_entry_sym(llvm::raw_ostream &os,
                              std::string_view sym_name,
                              unsigned cp_idx);
-
-  void generate_external_entry_sym(llvm::raw_ostream &os,
-                                   std::string_view sym_name);
 
   void handle_terminator(llvm::raw_ostream &os, llvm::MachineInstr *inst);
 
@@ -212,21 +208,6 @@ void GenerationState::generate_cp_entry_sym(llvm::raw_ostream &os,
   os << "    }\n";
 }
 
-void GenerationState::generate_external_entry_sym(llvm::raw_ostream &os,
-                                                  std::string_view sym_name) {
-  auto [it, inserted] = external_symbols.emplace(sym_name, sym_count);
-  if (inserted) {
-    sym_count += 1;
-  }
-
-  os << "// Definition of external symbol " << sym_name << "\n";
-  os << "    auto &" << sym_name << " = symbols[" << it->second << "];\n";
-  os << "    if (!" << sym_name << ".valid()) [[unlikely]] {\n";
-  os << "      " << sym_name << " = derived()->assembler.sym_add_undef("
-     << "\"" << sym_name << "\", Assembler::SymBinding::GLOBAL);\n";
-  os << "    }\n";
-}
-
 bool generate_inst(std::string &buf,
                    GenerationState &state,
                    llvm::MachineInstr *inst) {
@@ -288,6 +269,7 @@ bool generate_inst(std::string &buf,
   // that those do not get overwritten since they refer to the old value
   const llvm::MCInstrDesc &llvm_inst_desc =
       state.func->getTarget().getMCInstrInfo()->get(inst->getOpcode());
+  unsigned char num_implicit_defs = llvm_inst_desc.NumImplicitDefs;
 
   llvm::SmallVector<MICandidate> candidates;
   state.target->get_inst_candidates(*inst, candidates);
@@ -379,6 +361,7 @@ bool generate_inst(std::string &buf,
         }
         ++idx;
       }
+      llvm::errs() << "ERROR: operand not found\n";
       assert(0);
       exit(1);
     };
@@ -408,15 +391,6 @@ bool generate_inst(std::string &buf,
         use_ops.push_back(var_name);
         llvm::raw_string_ostream os(buf);
         state.generate_cp_entry_sym(os, var_name, use.getIndex());
-        continue;
-      }
-
-      if (use.isSymbol()) {
-        assert(use.getOffset() == 0);
-        std::string sym_name = use.getSymbolName();
-        use_ops.push_back(sym_name);
-        llvm::raw_string_ostream os(buf);
-        state.generate_external_entry_sym(os, sym_name);
         continue;
       }
 
@@ -463,9 +437,12 @@ bool generate_inst(std::string &buf,
           state.fmt_line(buf,
                          8,
                          "AsmReg inst{}_op{} = "
+                         "scratch_{}.has_reg() ? scratch_{}.cur_reg() : "
                          "scratch_{}.alloc(RegBank({}));\n",
                          inst_id,
                          op_idx,
+                         state.target->reg_name_lower(reg_id),
+                         state.target->reg_name_lower(reg_id),
                          state.target->reg_name_lower(reg_id),
                          state.target->reg_bank(reg_id));
           use_ops.push_back(std::format("inst{}_op{}", inst_id, op_idx));
@@ -621,7 +598,7 @@ bool generate_inst(std::string &buf,
       const auto reg = def.getReg();
 
       // Ignore exceeding implicit defs
-      if (def.isImplicit() && imp_defs++ >= llvm_inst_desc.NumImplicitDefs) {
+      if (def.isImplicit() && imp_defs++ >= num_implicit_defs) {
         continue;
       }
       if (state.target->reg_should_be_ignored(reg)) {
@@ -643,7 +620,10 @@ bool generate_inst(std::string &buf,
                        "        // def {} has not been allocated yet\n",
                        state.target->reg_name_lower(reg_id));
         std::format_to(std::back_inserter(buf),
-                       "        scratch_{}.alloc(RegBank({}));\n",
+                       "        scratch_{}.has_reg() ? scratch_{}.cur_reg() : "
+                       "scratch_{}.alloc(RegBank({}));\n",
+                       state.target->reg_name_lower(reg_id),
+                       state.target->reg_name_lower(reg_id),
                        state.target->reg_name_lower(reg_id),
                        state.target->reg_bank(reg_id));
       }
@@ -818,6 +798,10 @@ void GenerationState::handle_terminator(llvm::raw_ostream &os,
 
     if (jump_code.empty()) {
       llvm::errs() << "ERROR: encountered jump without known condition code\n";
+      std::string inst_string;
+      llvm::raw_string_ostream inst_string_stream(inst_string);
+      inst->print(inst_string_stream);
+      llvm::errs() << "Instruction: " << inst_string << "\n";
       exit(1);
     }
   }

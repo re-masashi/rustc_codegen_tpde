@@ -1774,8 +1774,8 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
       return;
     }
 
-    if (width <= 64) { // TODO (mj): support jump tables for 128-bit switch
-                       // statements?
+    if (width <= 64 && false) { // TODO (mj): support jump tables for 128-bit
+                                // switch statements?
       // check if the density of the values is high enough to warrant building
       // a jump table
       auto range = cases[end - 1].first[0] - cases[begin].first[0];

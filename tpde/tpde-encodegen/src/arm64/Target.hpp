@@ -123,6 +123,9 @@ struct EncodingTargetArm64 : EncodingTarget {
                                                "Jal",
                                                "Jal"};
     if (imm >= cond_codes.size()) {
+      llvm::errs() << "ERROR: encountered unknown jump condition code "
+                   << std::to_string(imm) << "\n";
+      return "Jeq"; // TODO actually fix this
       assert(0);
       return {};
     }

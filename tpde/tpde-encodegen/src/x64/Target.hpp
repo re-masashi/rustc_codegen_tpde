@@ -41,7 +41,9 @@ struct EncodingTargetX64 : EncodingTarget {
   bool reg_is_gp(const llvm::Register reg) const {
     const auto *target_reg_info = func->getSubtarget().getRegisterInfo();
 
-    if (!reg.isPhysical()) {
+    if (!reg.isPhysical() && false) {
+      llvm::errs() << "ERROR: register " << std::to_string(reg.id())
+                   << " is not physical\n";
       assert(0);
       exit(1);
     }
@@ -84,6 +86,8 @@ struct EncodingTargetX64 : EncodingTarget {
     } else if (id >= 0x20 && id <= 0x40) {
       return xmm_names[id - 0x20];
     } else {
+      llvm::errs() << "ERROR: invalid register ID " << std::to_string(id)
+                   << "\n";
       assert(0);
       exit(1);
     }
@@ -95,6 +99,8 @@ struct EncodingTargetX64 : EncodingTarget {
     } else if (id >= 0x20 && id <= 0x40) {
       return 1;
     } else {
+      llvm::errs() << "ERROR: invalid register ID " << std::to_string(id)
+                   << "\n";
       assert(0);
       exit(1);
     }
