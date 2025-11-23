@@ -6,6 +6,7 @@
 #include "tpde/AssemblerElf.hpp"
 #include "tpde/AssignmentPartRef.hpp"
 #include "tpde/CompilerBase.hpp"
+#include "tpde/RegisterFile.hpp"
 #include "tpde/base.hpp"
 #include "tpde/x64/FunctionWriterX64.hpp"
 
@@ -282,6 +283,7 @@ struct CompilerX64 : BaseTy<Adaptor, Derived, Config> {
   using ScratchReg = typename Base::ScratchReg;
   using ValuePartRef = typename Base::ValuePartRef;
   using ValuePart = typename Base::ValuePart;
+  using ValueRef = typename Base::ValueRef;
   using GenericValuePart = typename Base::GenericValuePart;
 
   using Assembler = typename PlatformConfig::Assembler;
@@ -516,31 +518,39 @@ private:
   /// @internal Emit compare of cmp_reg with case_value.
   void switch_emit_cmp(AsmReg cmp_reg,
                        AsmReg tmp_reg,
-                       u64 case_value,
-                       bool width_is_32) noexcept;
+                       const u64 *case_value,
+                       u32 width) noexcept;
 
 public:
+  /// @internal Which register bank should be used for a case statement with
+  /// values of the given width.
+  RegBank switch_reg_bank(u32 width);
+
+  /// @internal Which register bank should be used for a case statement with
+  /// values of the given width.
+  AsmReg switch_cmp_reg(ValueRef &ref, u32 width);
+
   /// @internal Jump if cmp_reg equals case_value.
   void switch_emit_cmpeq(Label case_label,
                          AsmReg cmp_reg,
                          AsmReg tmp_reg,
-                         u64 case_value,
-                         bool width_is_32) noexcept;
+                         const u64 *case_value,
+                         u32 width) noexcept;
   /// @internal Emit bounds check and jump table.
   bool switch_emit_jump_table(Label default_label,
                               std::span<const Label> labels,
                               AsmReg cmp_reg,
                               AsmReg tmp_reg,
-                              u64 low_bound,
-                              u64 high_bound,
-                              bool width_is_32) noexcept;
+                              const u64 *low_bound,
+                              const u64 *high_bound,
+                              u32 width) noexcept;
   /// @internal Jump if cmp_reg is greater than case_value.
   void switch_emit_binary_step(Label case_label,
                                Label gt_label,
                                AsmReg cmp_reg,
                                AsmReg tmp_reg,
-                               u64 case_value,
-                               bool width_is_32) noexcept;
+                               const u64 *case_value,
+                               u32 width) noexcept;
 
   /// Generate code sequence to load address of sym into a register. This will
   /// generate a function call for dynamic TLS access models.
@@ -1875,20 +1885,101 @@ template <IRAdaptor Adaptor,
           typename Derived,
           template <typename, typename, typename> typename BaseTy,
           typename Config>
+RegBank
+    CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_reg_bank(u32 width) {
+  if (width > 64) {
+    return Config::FP_BANK;
+  } else {
+    return Config::GP_BANK;
+  }
+}
+
+template <IRAdaptor Adaptor,
+          typename Derived,
+          template <typename, typename, typename> typename BaseTy,
+          typename Config>
+AsmReg
+    CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_cmp_reg(ValueRef &ref,
+                                                                  u32 width) {
+  if (width <= 64) {
+    return ref.part(0).into_scratch().cur_reg();
+  }
+  if (width > 128) {
+    assert(
+        false &&
+        "Switch statements for integers more than 128 bits are not supported");
+  }
+
+  AsmReg next_xmm =
+      AsmReg(this->register_file.find_first_free_excluding(Config::FP_BANK, 0));
+  if (next_xmm.valid() && next_xmm.id() - AsmReg::XMM0 < 8) {
+    if (has_cpu_feats(CPU_AVX)) {
+      for (unsigned i = 0; i < 2; i++) {
+        ASM(VPINSRQrrri,
+            next_xmm,
+            next_xmm,
+            ref.part(i).into_scratch().cur_reg(),
+            i * 64);
+      }
+    } else if (has_cpu_feats(CPU_SSE4_1)) {
+      for (unsigned i = 0; i < 2; i++) {
+        ASM(SSE_PINSRQrri,
+            next_xmm,
+            ref.part(i).into_scratch().cur_reg(),
+            i * 64);
+      }
+    } else {
+      assert(false && "128-bit integer switch statements not supported without "
+                      "SSE 4.1 or AVX");
+      return AsmReg::make_invalid();
+    }
+    return next_xmm;
+  } else {
+    assert(false && "unable to locate xmm register");
+    return AsmReg::make_invalid();
+  }
+}
+
+template <IRAdaptor Adaptor,
+          typename Derived,
+          template <typename, typename, typename> typename BaseTy,
+          typename Config>
 void CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_cmp(
     const AsmReg cmp_reg,
     const AsmReg tmp_reg,
-    const u64 case_value,
-    const bool width_is_32) noexcept {
-  if (width_is_32) {
-    ASM(CMP32ri, cmp_reg, case_value);
-  } else {
-    if ((i64)((i32)case_value) == (i64)case_value) {
-      ASM(CMP64ri, cmp_reg, case_value);
+    const u64 *case_value,
+    const u32 width) noexcept {
+  if (width == 32) {
+    ASM(CMP32ri, cmp_reg, case_value[0]);
+  } else if (width <= 64) {
+    if ((i64)((i32)case_value[0]) == (i64)case_value[0]) {
+      ASM(CMP64ri, cmp_reg, case_value[0]);
     } else {
-      this->materialize_constant(&case_value, Config::GP_BANK, 8, tmp_reg);
+      this->materialize_constant(
+          case_value, Config::GP_BANK, sizeof(u64), tmp_reg);
       ASM(CMP64rr, cmp_reg, tmp_reg);
     }
+  } else if (width == 128) {
+    // Need to be working with XMM registers
+    assert(cmp_reg.id() - AsmReg::XMM0 < 8);
+    assert(tmp_reg.id() - AsmReg::XMM0 < 8);
+
+    this->materialize_constant(case_value, Config::FP_BANK, width / 8, tmp_reg);
+    if (has_cpu_feats(CPU_AVX)) {
+      ASM(VPXOR128rrr, tmp_reg, tmp_reg, cmp_reg);
+    } else {
+      ASM(VPTEST128rr, tmp_reg, tmp_reg);
+    }
+    if (has_cpu_feats(CPU_SSE4_1)) {
+      ASM(SSE_PXORrr, tmp_reg, cmp_reg);
+      ASM(SSE_PTESTrr, tmp_reg, tmp_reg);
+    } else {
+      assert(
+          false &&
+          "128-bit integer comparison without AVX or SSE4.1 not implemented");
+    }
+  } else {
+    assert(false && "Unsupported integer comparison");
   }
 }
 
@@ -1900,9 +1991,9 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_cmpeq(
     const Label case_label,
     const AsmReg cmp_reg,
     const AsmReg tmp_reg,
-    const u64 case_value,
-    const bool width_is_32) noexcept {
-  switch_emit_cmp(cmp_reg, tmp_reg, case_value, width_is_32);
+    const u64 *case_value,
+    const u32 width) noexcept {
+  switch_emit_cmp(cmp_reg, tmp_reg, case_value, width);
   generate_raw_jump(Jump::je, case_label);
 }
 
@@ -1915,27 +2006,32 @@ bool CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_jump_table(
     std::span<const Label> labels,
     AsmReg cmp_reg,
     AsmReg tmp_reg,
-    u64 low_bound,
-    u64 high_bound,
-    bool width_is_32) noexcept {
+    const u64 *low_bound,
+    const u64 *high_bound,
+    u32 width) noexcept {
+  if (width > 64) {
+    return false; // TODO (mj): support jump tables for 128-bit switch
+                  // statements?
+  }
   // NB: we must not evict any registers here.
-  if (low_bound != 0) {
-    switch_emit_cmp(cmp_reg, tmp_reg, low_bound, width_is_32);
+  if (low_bound[0] != 0) {
+    switch_emit_cmp(cmp_reg, tmp_reg, low_bound, width);
     generate_raw_jump(Jump::jb, default_label);
   }
-  switch_emit_cmp(cmp_reg, tmp_reg, high_bound, width_is_32);
+  switch_emit_cmp(cmp_reg, tmp_reg, high_bound, width);
   generate_raw_jump(Jump::ja, default_label);
 
-  if (width_is_32) {
+  if (width == 32) {
     // zero-extend cmp_reg since we use the full width
     ASM(MOV32rr, cmp_reg, cmp_reg);
   }
 
-  if (low_bound != 0) {
-    if (i32(low_bound) == i64(low_bound)) {
-      ASM(SUB64ri, cmp_reg, low_bound);
+  if (low_bound[0] != 0) {
+    if (i32(low_bound[0]) == i64(low_bound[0])) {
+      ASM(SUB64ri, cmp_reg, low_bound[0]);
     } else {
-      this->materialize_constant(&low_bound, Config::GP_BANK, 8, tmp_reg);
+      this->materialize_constant(
+          low_bound, Config::GP_BANK, sizeof(u64), tmp_reg);
       ASM(SUB64rr, cmp_reg, tmp_reg);
     }
   }
@@ -1978,9 +2074,9 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_binary_step(
     const Label gt_label,
     const AsmReg cmp_reg,
     const AsmReg tmp_reg,
-    const u64 case_value,
-    const bool width_is_32) noexcept {
-  switch_emit_cmpeq(case_label, cmp_reg, tmp_reg, case_value, width_is_32);
+    const u64 *case_value,
+    const u32 width) noexcept {
+  switch_emit_cmpeq(case_label, cmp_reg, tmp_reg, case_value, width);
   generate_raw_jump(Jump::ja, gt_label);
 }
 

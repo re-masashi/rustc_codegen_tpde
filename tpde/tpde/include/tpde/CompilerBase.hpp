@@ -463,10 +463,10 @@ public:
   /// register. The cases must be sorted and every case value must appear at
   /// most once.
   void generate_switch(
-      ScratchReg &&cond,
+      ValueRef cond,
       u32 width,
       IRBlockRef default_block,
-      std::span<const std::pair<u64, IRBlockRef>> cases) noexcept;
+      std::span<const std::pair<const u64 *, IRBlockRef>> cases) noexcept;
 
   /// @}
 
@@ -1711,30 +1711,27 @@ void CompilerBase<Adaptor, Derived, Config>::generate_cond_branch(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::generate_switch(
-    ScratchReg &&cond,
+    ValueRef value,
     u32 width,
     IRBlockRef default_block,
-    std::span<const std::pair<u64, IRBlockRef>> cases) noexcept {
-  // This function takes cond as a ScratchReg as opposed to a ValuePart, because
-  // the ValueRef for the condition must be ref-counted before we enter the
-  // branch region.
-
-  assert(width <= 64);
+    std::span<const std::pair<const u64 *, IRBlockRef>> cases) noexcept {
+  assert(width <= 128);
   // We don't support sections with more than 4 GiB, so switches with more than
   // 4G cases are impossible to support.
   assert(cases.size() < UINT32_MAX && "large switches are unsupported");
 
-  AsmReg cmp_reg = cond.cur_reg();
-  bool width_is_32 = width <= 32;
-  if (u32 dst_width = util::align_up(width, 32); width != dst_width) {
-    derived()->generate_raw_intext(cmp_reg, cmp_reg, false, width, dst_width);
-  }
-
   // We must not evict any registers in the branching code, as we don't track
   // the individual value states per block. Hence, we must not allocate any
   // registers (e.g., for constants, jump table address) below.
+  RegBank reg_bank = derived()->switch_reg_bank(width);
   ScratchReg tmp_scratch{this};
-  AsmReg tmp_reg = tmp_scratch.alloc_gp();
+  AsmReg cmp_reg = derived()->switch_cmp_reg(value, width);
+  u32 dst_width = util::align_up(width, 32);
+  if (width != dst_width) {
+    derived()->generate_raw_intext(cmp_reg, cmp_reg, false, width, dst_width);
+  }
+
+  AsmReg tmp_reg = tmp_scratch.alloc(reg_bank);
 
   const auto spilled = this->spill_before_branch();
   this->begin_branch_region();
@@ -1770,48 +1767,51 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
                                      cmp_reg,
                                      tmp_reg,
                                      cases[begin + i].first,
-                                     width_is_32);
+                                     width);
       }
 
       derived()->generate_raw_jump(Derived::Jump::jmp, default_label);
       return;
     }
 
-    // check if the density of the values is high enough to warrant building
-    // a jump table
-    auto range = cases[end - 1].first - cases[begin].first;
-    // we will get wrong results if range is -1 so skip the jump table if
-    // that is the case
-    if (range != 0xFFFF'FFFF'FFFF'FFFF && (range / num_cases) < 8) {
-      // for gcc, it seems that if there are less than 8 values per
-      // case it will build a jump table so we do that, too
+    if (width <= 64) { // TODO (mj): support jump tables for 128-bit switch
+                       // statements?
+      // check if the density of the values is high enough to warrant building
+      // a jump table
+      auto range = cases[end - 1].first[0] - cases[begin].first[0];
+      // we will get wrong results if range is -1 so skip the jump table if
+      // that is the case
+      if (range != 0xFFFF'FFFF'FFFF'FFFF && (range / num_cases) < 8) {
+        // for gcc, it seems that if there are less than 8 values per
+        // case it will build a jump table so we do that, too
 
-      // the actual range is one greater than the result we get from
-      // subtracting so adjust for that
-      range += 1;
+        // the actual range is one greater than the result we get from
+        // subtracting so adjust for that
+        range += 1;
 
-      tpde::util::SmallVector<tpde::Label, 32> label_vec;
-      std::span<tpde::Label> labels;
-      if (range == num_cases) {
-        labels = std::span{case_labels.begin() + begin, num_cases};
-      } else {
-        label_vec.resize(range, default_label);
-        for (auto i = 0u; i < num_cases; ++i) {
-          label_vec[cases[begin + i].first - cases[begin].first] =
-              case_labels[begin + i];
+        tpde::util::SmallVector<tpde::Label, 32> label_vec;
+        std::span<tpde::Label> labels;
+        if (range == num_cases) {
+          labels = std::span{case_labels.begin() + begin, num_cases};
+        } else {
+          label_vec.resize(range, default_label);
+          for (auto i = 0u; i < num_cases; ++i) {
+            label_vec[cases[begin + i].first[0] - cases[begin].first[0]] =
+                case_labels[begin + i];
+          }
+          labels = std::span{label_vec.begin(), range};
         }
-        labels = std::span{label_vec.begin(), range};
-      }
 
-      // Give target the option to emit a jump table.
-      if (derived()->switch_emit_jump_table(default_label,
-                                            labels,
-                                            cmp_reg,
-                                            tmp_reg,
-                                            cases[begin].first,
-                                            cases[end - 1].first,
-                                            width_is_32)) {
-        return;
+        // Give target the option to emit a jump table.
+        if (derived()->switch_emit_jump_table(default_label,
+                                              labels,
+                                              cmp_reg,
+                                              tmp_reg,
+                                              cases[begin].first,
+                                              cases[end - 1].first,
+                                              width)) {
+          return;
+        }
       }
     }
 
@@ -1828,7 +1828,7 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
                                        cmp_reg,
                                        tmp_reg,
                                        half_value,
-                                       width_is_32);
+                                       width);
     // search the lower half
     self(begin, begin + half_len, self);
 
