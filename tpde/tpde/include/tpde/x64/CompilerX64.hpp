@@ -197,7 +197,7 @@ public:
         arg.stack_off = stack;
         stack += 8;
       }
-    } else {
+    } else if (arg.bank == RegBank{1}) {
       if (!must_assign_stack && xmm_cnt < 8) {
         arg.reg = Reg{AsmReg::XMM0 + xmm_cnt};
         xmm_cnt += 1;
@@ -210,6 +210,11 @@ public:
         arg.stack_off = stack;
         stack += size;
       }
+    } else {
+      // Argument without valid register bank, pass on stack.
+      stack = util::align_up(stack, arg.align < 8 ? 8 : arg.align);
+      arg.stack_off = stack;
+      stack += util::align_up(arg.size, 8);
     }
 
     if (must_assign_stack > 0) {
@@ -228,21 +233,23 @@ public:
         arg.reg = Reg{ret_gp_cnt == 0 ? AsmReg::AX : AsmReg::DX};
         ret_gp_cnt += 1;
       } else {
-        assert(false);
+        TPDE_UNREACHABLE("too many return values");
       }
-    } else {
+    } else if (arg.bank == RegBank{1}) {
       if (ret_xmm_cnt + arg.consecutive < 2) {
         arg.reg = Reg{ret_xmm_cnt == 0 ? AsmReg::XMM0 : AsmReg::XMM1};
         ret_xmm_cnt += 1;
       } else {
-        assert(false);
+        TPDE_UNREACHABLE("too many return values");
       }
+    } else {
+      TPDE_UNREACHABLE("return value must have valid register bank");
     }
   }
 };
 
 struct PlatformConfig : CompilerConfigDefault {
-  using Assembler = AssemblerElfX64;
+  using Assembler = tpde::elf::AssemblerElfX64;
   using AsmReg = tpde::x64::AsmReg;
   using DefaultCCAssigner = CCAssignerSysV;
   using FunctionWriter = FunctionWriterX64;
@@ -253,19 +260,6 @@ struct PlatformConfig : CompilerConfigDefault {
   static constexpr u32 PLATFORM_POINTER_SIZE = 8;
   static constexpr u32 NUM_BANKS = 2;
 };
-
-namespace concepts {
-template <typename T, typename Config>
-concept Compiler = tpde::Compiler<T, Config> && requires(T a) {
-  {
-    a.arg_is_int128(std::declval<typename T::IRValueRef>())
-  } -> std::convertible_to<bool>;
-
-  {
-    a.arg_allow_split_reg_stack_passing(std::declval<typename T::IRValueRef>())
-  } -> std::convertible_to<bool>;
-};
-} // namespace concepts
 
 /// Compiler mixin for targeting x86-64.
 template <IRAdaptor Adaptor,
@@ -286,7 +280,6 @@ struct CompilerX64 : BaseTy<Adaptor, Derived, Config> {
   using ValueRef = typename Base::ValueRef;
   using GenericValuePart = typename Base::GenericValuePart;
 
-  using Assembler = typename PlatformConfig::Assembler;
   using RegisterFile = typename Base::RegisterFile;
 
   using CallArg = typename Base::CallArg;
@@ -359,12 +352,14 @@ struct CompilerX64 : BaseTy<Adaptor, Derived, Config> {
   /// Symbol for __tls_get_addr.
   SymRef sym_tls_get_addr;
 
+  /// Helper class for building call sequences.
   class CallBuilder : public Base::template CallBuilderBase<CallBuilder> {
     u32 stack_adjust_off = 0;
 
     void set_stack_used() noexcept;
 
   public:
+    /// Constructor.
     CallBuilder(Derived &compiler, CCAssigner &assigner) noexcept
         : Base::template CallBuilderBase<CallBuilder>(compiler, assigner) {}
 
@@ -379,7 +374,6 @@ struct CompilerX64 : BaseTy<Adaptor, Derived, Config> {
                        const CPU_FEATURES cpu_features = CPU_BASELINE)
       : Base{adaptor}, cpu_feats(cpu_features) {
     static_assert(std::is_base_of_v<CompilerX64, Derived>);
-    static_assert(concepts::Compiler<Derived, PlatformConfig>);
   }
 
   template <typename... Args>
@@ -401,7 +395,14 @@ struct CompilerX64 : BaseTy<Adaptor, Derived, Config> {
 
   void start_func(u32 func_idx) noexcept;
 
-  void gen_func_prolog_and_args(CCAssigner *) noexcept;
+  /// Begin prologue, prepare for assigning arguments.
+  void prologue_begin(CCAssigner *cc_assigner) noexcept;
+  /// Assign argument part. Returns the stack offset if the value should be
+  /// initialized as stack variable.
+  std::optional<i32> prologue_assign_arg_part(ValuePart &&vp,
+                                              CCAssignment cca) noexcept;
+  /// Finish prologue.
+  void prologue_end(CCAssigner *cc_assigner) noexcept;
 
   void finish_func(u32 func_idx) noexcept;
 
@@ -574,23 +575,8 @@ template <IRAdaptor Adaptor,
           typename Derived,
           template <typename, typename, typename> typename BaseTy,
           typename Config>
-void CompilerX64<Adaptor, Derived, BaseTy, Config>::gen_func_prolog_and_args(
+void CompilerX64<Adaptor, Derived, BaseTy, Config>::prologue_begin(
     CCAssigner *cc_assigner) noexcept {
-  // prologue:
-  // push rbp
-  // mov rbp, rsp
-  // optionally create vararg save-area
-  // reserve space for callee-saved regs
-  //   = 1 byte for each of the lower 8 regs and 2
-  //   bytes for the higher 8 regs
-  // sub rsp, #<frame_size>+<largest_call_frame_usage>
-
-  // TODO(ts): technically we only need rbp if there
-  // is a dynamic alloca but then we need to make the
-  // frame indexing dynamic in CompilerBase and the
-  // unwind info needs to take the dynamic sub rsp for
-  // calls into account
-
   func_ret_offs.clear();
   func_start_off = this->text_writer.offset();
   scalar_arg_count = vec_arg_count = 0xFFFF'FFFF;
@@ -652,59 +638,58 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::gen_func_prolog_and_args(
     ASM(SSE_MOVDQUmr, mem, FE_XMM7);
     this->label_place(skip_fp);
   }
+}
 
-  // Temporarily prevent argument registers from being assigned.
-  assert((cc_info.allocatable_regs & cc_info.arg_regs) == cc_info.arg_regs &&
-         "argument registers must also be allocatable");
-  this->register_file.allocatable &= ~cc_info.arg_regs;
-
-  u32 arg_idx = 0;
-  for (const IRValueRef arg : this->adaptor->cur_args()) {
-    derived()->handle_func_arg(
-        arg_idx,
-        arg,
-        [&](ValuePart &&vp, CCAssignment cca) -> std::optional<i32> {
-          if (!cca.byval) {
-            cca.bank = vp.bank();
-            cca.size = vp.part_size();
-          }
-
-          cc_assigner->assign_arg(cca);
-
-          if (cca.reg.valid()) [[likely]] {
-            vp.set_value_reg(this, cca.reg);
-            // Mark register as allocatable as soon as it is assigned. If the
-            // argument is unused, the register will be freed immediately and
-            // can be used for later stack arguments.
-            this->register_file.allocatable |= u64{1} << cca.reg.id();
-            return {};
-          }
-
-          if (vp.is_owned()) {
-            // no need to handle unused arguments
-            return {};
-          }
-
-          this->stack.frame_used = true;
-          if (cca.byval) {
-            // Return byval frame_off.
-            return 0x10 + cca.stack_off;
-          } else {
-            //  TODO(ts): maybe allow negative frame offsets for value
-            //  assignments so we can simply reference this?
-            //  but this probably doesn't work with multi-part values
-            //  since the offsets are different
-            AsmReg dst = vp.alloc_reg(this);
-            this->load_from_stack(dst, 0x10 + cca.stack_off, cca.size);
-          }
-          return {};
-        });
-
-    arg_idx += 1;
+template <IRAdaptor Adaptor,
+          typename Derived,
+          template <typename, typename, typename> typename BaseTy,
+          typename Config>
+std::optional<i32>
+    CompilerX64<Adaptor, Derived, BaseTy, Config>::prologue_assign_arg_part(
+        ValuePart &&vp, CCAssignment cca) noexcept {
+  if (cca.reg.valid()) [[likely]] {
+    vp.set_value_reg(this, cca.reg);
+    // Mark register as allocatable as soon as it is assigned. If the argument
+    // is unused, the register will be freed immediately and can be used for
+    // later stack arguments.
+    this->register_file.allocatable |= u64{1} << cca.reg.id();
+    return {};
   }
 
+  if (vp.is_owned()) {
+    // No need to handle unused arguments.
+    return {};
+  }
+
+  this->stack.frame_used = true;
+  i32 frame_off = 0x10 + cca.stack_off;
+  if (cca.byval) {
+    return frame_off; // Return byval frame_off.
+  } else if (vp.assignment().assignment()->part_count == 1 &&
+             !vp.assignment().register_valid()) {
+    // For single-part values, the in-memory layout is equal to our
+    // layout in the spill slot. Reuse argument area as spill slot.
+    // However, don't do this for fixed assignments (indicated by
+    // register_valid()).
+    // TODO: consider doing this for two-part values when possible.
+    vp.assignment().set_stack_valid();
+    vp.assignment().assignment()->frame_off = frame_off;
+  } else {
+    AsmReg dst = vp.alloc_reg(this);
+    this->load_from_stack(dst, frame_off, cca.size);
+  }
+  return {};
+}
+
+template <IRAdaptor Adaptor,
+          typename Derived,
+          template <typename, typename, typename> typename BaseTy,
+          typename Config>
+void CompilerX64<Adaptor, Derived, BaseTy, Config>::prologue_end(
+    CCAssigner *cc_assigner) noexcept {
   if (this->adaptor->cur_is_vararg()) [[unlikely]] {
     // TODO: get this from CCAssigner?
+    const CCInfo &cc_info = cc_assigner->get_ccinfo();
     auto arg_regs = this->register_file.allocatable & cc_info.arg_regs;
     u64 gp_regs = arg_regs & this->register_file.bank_regs(Config::GP_BANK);
     u64 xmm_regs = arg_regs & this->register_file.bank_regs(Config::FP_BANK);
@@ -712,8 +697,6 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::gen_func_prolog_and_args(
     this->vec_arg_count = std::popcount(xmm_regs);
     this->var_arg_stack_off = 0x10 + cc_assigner->get_stack_size();
   }
-
-  this->register_file.allocatable |= cc_info.arg_regs;
 }
 
 template <IRAdaptor Adaptor,
@@ -1331,7 +1314,7 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::materialize_constant(
     TPDE_FATAL("unable to materialize constant");
   }
 
-  this->reloc_text(sym, R_X86_64_PC32, this->text_writer.offset() - 4, -4);
+  this->reloc_text(sym, elf::R_X86_64_PC32, this->text_writer.offset() - 4, -4);
 }
 
 template <IRAdaptor Adaptor,
@@ -1703,39 +1686,28 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::CallBuilder::add_arg_byval(
   auto size = cca.size;
   set_stack_used();
   i32 off = 0;
+  i32 soff = cca.stack_off;
   while (size >= 8) {
     ASMC(&this->compiler, MOV64rm, tmp, FE_MEM(ptr, 0, FE_NOREG, off));
-    ASMC(&this->compiler,
-         MOV64mr,
-         FE_MEM(FE_SP, 0, FE_NOREG, (i32)(cca.stack_off + off)),
-         tmp);
+    ASMC(&this->compiler, MOV64mr, FE_MEM(FE_SP, 0, FE_NOREG, soff + off), tmp);
     off += 8;
     size -= 8;
   }
   if (size >= 4) {
     ASMC(&this->compiler, MOV32rm, tmp, FE_MEM(ptr, 0, FE_NOREG, off));
-    ASMC(&this->compiler,
-         MOV32mr,
-         FE_MEM(FE_SP, 0, FE_NOREG, (i32)(cca.stack_off + off)),
-         tmp);
+    ASMC(&this->compiler, MOV32mr, FE_MEM(FE_SP, 0, FE_NOREG, soff + off), tmp);
     off += 4;
     size -= 4;
   }
   if (size >= 2) {
     ASMC(&this->compiler, MOVZXr32m16, tmp, FE_MEM(ptr, 0, FE_NOREG, off));
-    ASMC(&this->compiler,
-         MOV16mr,
-         FE_MEM(FE_SP, 0, FE_NOREG, (i32)(cca.stack_off + off)),
-         tmp);
+    ASMC(&this->compiler, MOV16mr, FE_MEM(FE_SP, 0, FE_NOREG, soff + off), tmp);
     off += 2;
     size -= 2;
   }
   if (size >= 1) {
     ASMC(&this->compiler, MOVZXr32m8, tmp, FE_MEM(ptr, 0, FE_NOREG, off));
-    ASMC(&this->compiler,
-         MOV8mr,
-         FE_MEM(FE_SP, 0, FE_NOREG, (i32)(cca.stack_off + off)),
-         tmp);
+    ASMC(&this->compiler, MOV8mr, FE_MEM(FE_SP, 0, FE_NOREG, soff + off), tmp);
   }
 }
 
@@ -1748,56 +1720,22 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::CallBuilder::add_arg_stack(
   set_stack_used();
 
   auto reg = vp.has_reg() ? vp.cur_reg() : vp.load_to_reg(&this->compiler);
+  FeMem mem_op = FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off));
   if (this->compiler.register_file.reg_bank(reg) == Config::GP_BANK) {
     switch (cca.size) {
-    case 1:
-      ASMC(&this->compiler,
-           MOV8mr,
-           FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off)),
-           reg);
-      break;
-    case 2:
-      ASMC(&this->compiler,
-           MOV16mr,
-           FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off)),
-           reg);
-      break;
-    case 4:
-      ASMC(&this->compiler,
-           MOV32mr,
-           FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off)),
-           reg);
-      break;
-    case 8:
-      ASMC(&this->compiler,
-           MOV64mr,
-           FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off)),
-           reg);
-      break;
+    case 1: ASMC(&this->compiler, MOV8mr, mem_op, reg); break;
+    case 2: ASMC(&this->compiler, MOV16mr, mem_op, reg); break;
+    case 4: ASMC(&this->compiler, MOV32mr, mem_op, reg); break;
+    case 8: ASMC(&this->compiler, MOV64mr, mem_op, reg); break;
     default: TPDE_UNREACHABLE("invalid GP reg size");
     }
   } else {
     assert(this->compiler.register_file.reg_bank(reg) == Config::FP_BANK);
     switch (cca.size) {
-    case 4:
-      ASMC(&this->compiler,
-           SSE_MOVSSmr,
-           FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off)),
-           reg);
-      break;
-    case 8:
-      ASMC(&this->compiler,
-           SSE_MOVSDmr,
-           FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off)),
-           reg);
-      break;
-    case 16:
-      ASMC(&this->compiler,
-           SSE_MOVDQAmr,
-           FE_MEM(FE_SP, 0, FE_NOREG, i32(cca.stack_off)),
-           reg);
-      break;
-    default: TPDE_UNREACHABLE("invalid GP reg size");
+    case 4: ASMC(&this->compiler, SSE_MOVSSmr, mem_op, reg); break;
+    case 8: ASMC(&this->compiler, SSE_MOVSDmr, mem_op, reg); break;
+    case 16: ASMC(&this->compiler, SSE_MOVDQAmr, mem_op, reg); break;
+    default: TPDE_UNREACHABLE("invalid SSE reg size");
     }
   }
 }
@@ -1839,7 +1777,7 @@ void CompilerX64<Adaptor, Derived, BaseTy, Config>::CallBuilder::call_impl(
     this->compiler.text_writer.ensure_space(16);
     ASMC(&this->compiler, CALL, this->compiler.text_writer.cur_ptr());
     this->compiler.reloc_text(
-        *sym, R_X86_64_PLT32, this->compiler.text_writer.offset() - 4, -4);
+        *sym, elf::R_X86_64_PLT32, this->compiler.text_writer.offset() - 4, -4);
   } else {
     ValuePart &tvp = std::get<ValuePart>(target);
     if (tvp.has_assignment() && !tvp.assignment().register_valid()) {
@@ -2107,7 +2045,8 @@ CompilerX64<Adaptor, Derived, BaseTy, Config>::ScratchReg
     this->text_writer.ensure_space(0x10);
     *this->text_writer.cur_ptr()++ = 0x66;
     ASMNC(LEA64rm, arg_reg, FE_MEM(FE_IP, 0, FE_NOREG, 0));
-    this->reloc_text(sym, R_X86_64_TLSGD, this->text_writer.offset() - 4, -4);
+    this->reloc_text(
+        sym, elf::R_X86_64_TLSGD, this->text_writer.offset() - 4, -4);
     *this->text_writer.cur_ptr()++ = 0x66;
     *this->text_writer.cur_ptr()++ = 0x66;
     *this->text_writer.cur_ptr()++ = 0x48;
@@ -2117,7 +2056,7 @@ CompilerX64<Adaptor, Derived, BaseTy, Config>::ScratchReg
           "__tls_get_addr", Assembler::SymBinding::GLOBAL);
     }
     this->reloc_text(this->sym_tls_get_addr,
-                     R_X86_64_PLT32,
+                     elf::R_X86_64_PLT32,
                      this->text_writer.offset() - 4,
                      -4);
     arg.reset();

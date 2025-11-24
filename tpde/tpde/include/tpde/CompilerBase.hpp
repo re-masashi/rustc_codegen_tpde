@@ -108,7 +108,6 @@ struct CompilerBase {
 
   using BlockIndex = typename Analyzer<Adaptor>::BlockIndex;
 
-  using Assembler = typename Config::Assembler;
   using AsmReg = typename Config::AsmReg;
 
   using RegisterFile = tpde::RegisterFile<Config::NUM_BANKS, 32>;
@@ -185,7 +184,7 @@ private:
   typename Config::DefaultCCAssigner default_cc_assigner;
 
 public:
-  Assembler assembler;
+  typename Config::Assembler assembler;
   Config::FunctionWriter text_writer;
   // TODO(ts): smallvector?
   std::vector<SymRef> func_syms;
@@ -211,31 +210,34 @@ public:
     EndIter to;
   };
 
+  /// Call argument, enhancing an IRValueRef with information on how to pass it.
   struct CallArg {
     enum class Flag : u8 {
-      none,
-      zext,
-      sext,
-      sret,
-      byval
+      none,        ///< No extra handling.
+      zext,        ///< Scalar integer, zero-extend to target-specific size.
+      sext,        ///< Scalar integer, sign-extend to target-specific size.
+      sret,        ///< Struct return pointer.
+      byval,       ///< Value is copied into corresponding stack slot.
+      allow_split, ///< Value parts can be split across stack/registers.
     };
 
     explicit CallArg(IRValueRef value,
                      Flag flags = Flag::none,
-                     u8 byval_align = 0,
+                     u8 byval_align = 1,
                      u32 byval_size = 0)
         : value(value),
           flag(flags),
           byval_align(byval_align),
           byval_size(byval_size) {}
 
-    IRValueRef value;
-    Flag flag;
-    u8 byval_align;
-    u8 ext_bits = 0;
-    u32 byval_size;
+    IRValueRef value; ///< Argument IR value.
+    Flag flag;        ///< Value handling flag.
+    u8 byval_align;   ///< For Flag::byval, the stack alignment.
+    u8 ext_bits = 0;  ///< For Flag::zext and Flag::sext, the source bit width.
+    u32 byval_size;   ///< For Flag::byval, the argument size.
   };
 
+  /// Base class for target-specific CallBuilder implementations.
   template <typename CBDerived>
   class CallBuilderBase {
   protected:
@@ -244,7 +246,6 @@ public:
 
     RegisterFile::RegBitSet arg_regs{};
 
-  public:
     CallBuilderBase(Derived &compiler, CCAssigner &assigner) noexcept
         : compiler(compiler), assigner(assigner) {}
 
@@ -254,19 +255,34 @@ public:
     // void call_impl(std::variant<SymRef, ValuePart> &&) noexcept;
     CBDerived *derived() noexcept { return static_cast<CBDerived *>(this); }
 
+  public:
+    /// Add a value part as argument. cca must be populated with information
+    /// about the argument, except for the reg/stack_off, which are set by the
+    /// CCAssigner. If no register bank is assigned, the register bank and size
+    /// are retrieved from the value part, otherwise, the size must be set, too.
     void add_arg(ValuePart &&vp, CCAssignment cca) noexcept;
+    /// Add a full IR value as argument, with an explicit number of parts.
+    /// Values are decomposed into their parts and are typically either fully
+    /// in registers or fully on the stack (except CallArg::Flag::allow_split).
     void add_arg(const CallArg &arg, u32 part_count) noexcept;
+    /// Add a full IR value as argument. The number of value parts must be
+    /// exposed via val_parts. Values are decomposed into their parts and are
+    /// typically either fully in registers or fully on the stack (except
+    /// CallArg::Flag::allow_split).
     void add_arg(const CallArg &arg) noexcept {
       add_arg(std::move(arg), compiler.val_parts(arg.value).count());
     }
 
-    // evict registers, do call, reset stack frame
+    /// Generate the function call (evict registers, call, reset stack frame).
     void call(std::variant<SymRef, ValuePart>) noexcept;
 
+    /// Assign next return value part to vp.
     void add_ret(ValuePart &vp, CCAssignment cca) noexcept;
+    /// Assign next return value part to vp.
     void add_ret(ValuePart &&vp, CCAssignment cca) noexcept {
       add_ret(vp, cca);
     }
+    /// Assign return values to the IR value.
     void add_ret(ValueRef &vr) noexcept;
   };
 
@@ -353,8 +369,16 @@ public:
 
   /// @}
 
-  template <typename Fn>
-  void handle_func_arg(u32 arg_idx, IRValueRef arg, Fn add_arg) noexcept;
+  /// Assign function argument in prologue. \ref align can be used to increase
+  /// the minimal stack alignment of the first part of the argument. If \ref
+  /// allow_split is set, the argument can be passed partially in registers,
+  /// otherwise (default) it must be either passed completely in registers or
+  /// completely on the stack.
+  void prologue_assign_arg(CCAssigner *cc_assigner,
+                           u32 arg_idx,
+                           IRValueRef arg,
+                           u32 align = 1,
+                           bool allow_split = false) noexcept;
 
   /// \name Value References
   /// @{
@@ -583,7 +607,7 @@ template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename CBDerived>
 void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
     CBDerived>::add_arg(ValuePart &&vp, CCAssignment cca) noexcept {
-  if (!cca.byval) {
+  if (!cca.byval && cca.bank == RegBank{}) {
     cca.bank = vp.bank();
     cca.size = vp.part_size();
   }
@@ -665,22 +689,8 @@ void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
     return;
   }
 
-  u32 align = 1;
-  bool consecutive = false;
-  u32 consec_def = 0;
-  if (compiler.arg_is_int128(arg.value)) {
-    // TODO: this also applies to composites with 16-byte alignment
-    align = 16;
-    consecutive = true;
-  } else if (part_count > 1 &&
-             !compiler.arg_allow_split_reg_stack_passing(arg.value)) {
-    consecutive = true;
-    if (part_count > UINT8_MAX) {
-      // Must be completely passed on the stack.
-      consecutive = false;
-      consec_def = -1;
-    }
-  }
+  u32 align = arg.byval_align;
+  bool allow_split = arg.flag == CallArg::Flag::allow_split;
 
   for (u32 part_idx = 0; part_idx < part_count; ++part_idx) {
     u8 int_ext = 0;
@@ -688,15 +698,14 @@ void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
       assert(arg.ext_bits != 0 && "cannot extend zero-bit integer");
       int_ext = arg.ext_bits | (arg.flag == CallArg::Flag::sext ? 0x80 : 0);
     }
-    derived()->add_arg(
-        vr.part(part_idx),
-        CCAssignment{
-            .consecutive =
-                u8(consecutive ? part_count - part_idx - 1 : consec_def),
-            .sret = arg.flag == CallArg::Flag::sret,
-            .int_ext = int_ext,
-            .align = u8(part_idx == 0 ? align : 1),
-        });
+    u32 remaining = part_count < 256 ? part_count - part_idx - 1 : 255;
+    derived()->add_arg(vr.part(part_idx),
+                       CCAssignment{
+                           .consecutive = u8(allow_split ? 0 : remaining),
+                           .sret = arg.flag == CallArg::Flag::sret,
+                           .int_ext = int_ext,
+                           .align = u8(part_idx == 0 ? align : 1),
+                       });
   }
 }
 
@@ -1012,7 +1021,9 @@ void CompilerBase<Adaptor, Derived, Config>::free_assignment(
 #endif
 
   // variable references do not have a stack slot
-  if (!is_var_ref && assignment->frame_off != 0) {
+  bool has_stack = Config::FRAME_INDEXING_NEGATIVE ? assignment->frame_off < 0
+                                                   : assignment->frame_off != 0;
+  if (!is_var_ref && has_stack) {
     free_stack_slot(assignment->frame_off, assignment->size());
   }
 
@@ -1132,18 +1143,22 @@ void CompilerBase<Adaptor, Derived, Config>::free_stack_slot(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-template <typename Fn>
-void CompilerBase<Adaptor, Derived, Config>::handle_func_arg(
-    u32 arg_idx, IRValueRef arg, Fn add_arg) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::prologue_assign_arg(
+    CCAssigner *cc_assigner,
+    u32 arg_idx,
+    IRValueRef arg,
+    u32 align,
+    bool allow_split) noexcept {
   ValueRef vr = derived()->result_ref(arg);
   if (adaptor->cur_arg_is_byval(arg_idx)) {
+    CCAssignment cca{
+        .byval = true,
+        .align = u8(adaptor->cur_arg_byval_align(arg_idx)),
+        .size = adaptor->cur_arg_byval_size(arg_idx),
+    };
+    cc_assigner->assign_arg(cca);
     std::optional<i32> byval_frame_off =
-        add_arg(vr.part(0),
-                CCAssignment{
-                    .byval = true,
-                    .align = u8(adaptor->cur_arg_byval_align(arg_idx)),
-                    .size = adaptor->cur_arg_byval_size(arg_idx),
-                });
+        derived()->prologue_assign_arg_part(vr.part(0), cca);
 
     if (byval_frame_off) {
       // We need to convert the assignment into a stack variable ref.
@@ -1165,36 +1180,27 @@ void CompilerBase<Adaptor, Derived, Config>::handle_func_arg(
   }
 
   if (adaptor->cur_arg_is_sret(arg_idx)) {
-    add_arg(vr.part(0), CCAssignment{.sret = true});
+    assert(vr.assignment()->part_count == 1 && "sret must be single-part");
+    ValuePartRef vp = vr.part(0);
+    CCAssignment cca{
+        .sret = true, .bank = vp.bank(), .size = Config::PLATFORM_POINTER_SIZE};
+    cc_assigner->assign_arg(cca);
+    derived()->prologue_assign_arg_part(std::move(vp), cca);
     return;
   }
 
   const u32 part_count = vr.assignment()->part_count;
-
-  u32 align = 1;
-  u32 consecutive = 0;
-  u32 consec_def = 0;
-  if (derived()->arg_is_int128(arg)) {
-    // TODO: this also applies to composites with 16-byte alignment
-    align = 16;
-    consecutive = 1;
-  } else if (part_count > 1 &&
-             !derived()->arg_allow_split_reg_stack_passing(arg)) {
-    consecutive = 1;
-    if (part_count > UINT8_MAX) {
-      // Must be completely passed on the stack.
-      consecutive = 0;
-      consec_def = -1;
-    }
-  }
-
   for (u32 part_idx = 0; part_idx < part_count; ++part_idx) {
-    add_arg(vr.part(part_idx),
-            CCAssignment{
-                .consecutive =
-                    u8(consecutive ? part_count - part_idx - 1 : consec_def),
-                .align = u8(part_idx == 0 ? align : 1),
-            });
+    ValuePartRef vp = vr.part(part_idx);
+    u32 remaining = part_count < 256 ? part_count - part_idx - 1 : 255;
+    CCAssignment cca{
+        .consecutive = u8(allow_split ? 0 : remaining),
+        .align = u8(part_idx == 0 ? align : 1),
+        .bank = vp.bank(),
+        .size = vp.part_size(),
+    };
+    cc_assigner->assign_arg(cca);
+    derived()->prologue_assign_arg_part(std::move(vp), cca);
   }
 }
 
@@ -2319,10 +2325,25 @@ bool CompilerBase<Adaptor, Derived, Config>::compile_func(
 
   register_file.allocatable = cc_assigner->get_ccinfo().allocatable_regs;
 
-  // This initializes the stack frame, which must reserve space for
-  // callee-saved registers, vararg save area, etc.
   cc_assigner->reset();
-  derived()->gen_func_prolog_and_args(cc_assigner);
+  // Temporarily prevent argument registers from being assigned.
+  const CCInfo &cc_info = cc_assigner->get_ccinfo();
+  assert((cc_info.allocatable_regs & cc_info.arg_regs) == cc_info.arg_regs &&
+         "argument registers must also be allocatable");
+  this->register_file.allocatable &= ~cc_info.arg_regs;
+
+  // Begin prologue, prepare for handling arguments.
+  derived()->prologue_begin(cc_assigner);
+  u32 arg_idx = 0;
+  for (const IRValueRef arg : this->adaptor->cur_args()) {
+    // Init assignment for all arguments. This can be substituted for more
+    // complex mappings of arguments to value parts.
+    derived()->prologue_assign_arg(cc_assigner, arg_idx++, arg);
+  }
+  // Finish prologue, storing relevant data from the argument cc_assigner.
+  derived()->prologue_end(cc_assigner);
+
+  this->register_file.allocatable |= cc_info.arg_regs;
 
   for (const IRValueRef alloca : adaptor->cur_static_allocas()) {
     auto size = adaptor->val_alloca_size(alloca);

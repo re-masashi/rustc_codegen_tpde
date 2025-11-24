@@ -32,19 +32,12 @@ struct LLVMCompilerArm64 : tpde::a64::CompilerA64<LLVMAdaptor,
                                       LLVMCompilerArm64,
                                       LLVMCompilerBase,
                                       CompilerConfig>;
-  using EncCompiler = EncodeCompiler<LLVMAdaptor,
-                                     LLVMCompilerArm64,
-                                     LLVMCompilerBase,
-                                     CompilerConfig>;
 
   using ScratchReg = typename Base::ScratchReg;
   using ValuePartRef = typename Base::ValuePartRef;
   using ValuePart = typename Base::ValuePart;
   using ValueRef = typename Base::ValueRef;
   using GenericValuePart = typename Base::GenericValuePart;
-  using InstRange = typename Base::InstRange;
-
-  using Assembler = typename Base::Assembler;
 
   using AsmReg = typename Base::AsmReg;
 
@@ -63,16 +56,11 @@ struct LLVMCompilerArm64 : tpde::a64::CompilerA64<LLVMAdaptor,
   void reset() noexcept {
     // TODO: move to LLVMCompilerBase
     Base::reset();
-    EncCompiler::reset();
-  }
-
-  bool arg_is_int128(const IRValueRef value) const noexcept {
-    return value->getType()->isIntegerTy(128);
+    EncodeCompiler::reset();
   }
 
   bool arg_allow_split_reg_stack_passing(IRValueRef value) const noexcept {
-    // we allow splitting the value if it is an aggregate but not if it is an
-    // i128 or array
+    // All types except i128 and arrays can be split across registers/stack.
     llvm::Type *ty = value->getType();
     return !ty->isIntegerTy(128) && !ty->isArrayTy();
   }
@@ -128,15 +116,19 @@ void LLVMCompilerArm64::load_address_of_var_reference(
   this->text_writer.ensure_space(8);
   if (!use_local_access(global)) {
     // mov the ptr from the GOT
-    reloc_text(sym, R_AARCH64_ADR_GOT_PAGE, this->text_writer.offset());
+    reloc_text(
+        sym, tpde::elf::R_AARCH64_ADR_GOT_PAGE, this->text_writer.offset());
     ASMNC(ADRP, dst, 0, 0);
-    reloc_text(sym, R_AARCH64_LD64_GOT_LO12_NC, this->text_writer.offset());
+    reloc_text(
+        sym, tpde::elf::R_AARCH64_LD64_GOT_LO12_NC, this->text_writer.offset());
     ASMNC(LDRxu, dst, dst, 0);
   } else {
     // emit lea with relocation
-    reloc_text(sym, R_AARCH64_ADR_PREL_PG_HI21, this->text_writer.offset());
+    reloc_text(
+        sym, tpde::elf::R_AARCH64_ADR_PREL_PG_HI21, this->text_writer.offset());
     ASMNC(ADRP, dst, 0, 0);
-    reloc_text(sym, R_AARCH64_ADD_ABS_LO12_NC, this->text_writer.offset());
+    reloc_text(
+        sym, tpde::elf::R_AARCH64_ADD_ABS_LO12_NC, this->text_writer.offset());
     ASMNC(ADDxi, dst, dst, 0);
   }
 }

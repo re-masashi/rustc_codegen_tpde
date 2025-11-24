@@ -112,10 +112,9 @@ void EncodingTargetArm64::get_inst_candidates(
         os << ", " << (mi.getOperand(2).getImm() << shift) << ");\n";
       } else if (mi.getOperand(2).isCPI()) {
         os << ", 0);\n";
-        os << "    derived()->reloc_text(" << ops[2] << ", R_AARCH64_LDST"
-           << (8 << shift)
-           << "_ABS_LO12_NC, "
-              "derived()->text_writer.offset() - 4);\n";
+        os << "    derived()->reloc_text(" << ops[2]
+           << ", tpde::elf::R_AARCH64_LDST" << (8 << shift) << "_ABS_LO12_NC"
+           << ", derived()->text_writer.offset() - 4);\n";
       }
     });
   };
@@ -217,7 +216,7 @@ void EncodingTargetArm64::get_inst_candidates(
       auto dst = format_reg(mi.getOperand(0), ops[0]);
       os << "    ASMD(" << mnem << ", " << dst << ", 0, 0);";
       os << "    derived()->reloc_text(" << ops[1]
-         << ", R_AARCH64_ADR_PREL_PG_HI21, "
+         << ", tpde::elf::R_AARCH64_ADR_PREL_PG_HI21, "
          << "derived()->text_writer.offset() - 4);\n";
     });
   };
@@ -1066,12 +1065,6 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("BRK", "BRK");
 
   case_default("BL", "BL");
-
-  if (candidates.empty()) {
-    llvm::errs() << "ERROR: unhandled instruction " << Name << "\n";
-    assert(false);
-    exit(1);
-  }
 }
 
 std::optional<std::pair<unsigned, unsigned>>
