@@ -17,6 +17,21 @@ option(TPDE_ENABLE_COVERAGE "enable coverage instrumentation" OFF)
 option(TPDE_ENABLE_PCH "enable pre-compiled headers" OFF)
 option(TPDE_BUILD_DOCS "Build documentation" OFF)
 
+
+find_program(WILD_PROGRAM wild)
+if (WILD_PROGRAM)
+    set(CMAKE_LINKER WILD_PROGRAM)
+    message(STATUS "wild found: ${WILD_PROGRAM}")
+else ()
+    find_program(MOLD_PROGRAM mold)
+    if (MOLD_PROGRAM)
+        set(CMAKE_LINKER_TYPE MOLD)
+        message(STATUS "mold found: ${MOLD_PROGRAM}")
+    else ()
+        message(STATUS "Neither mold nor wild could be found")
+    endif ()
+endif ()
+
 # warnings
 if (MSVC)
     add_compile_options(/W4 /WX)
