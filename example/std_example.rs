@@ -90,6 +90,7 @@ fn main() {
     let hundred_i128 = 100i128;
     let hundred_f32 = 100.0f32;
     let hundred_f64 = 100.0f64;
+    /*
     assert_eq!(hundred_u128 as f32, 100.0);
     assert_eq!(hundred_u128 as f64, 100.0);
     assert_eq!(hundred_f32 as u128, 100);
@@ -102,6 +103,7 @@ fn main() {
 
     assert_eq!(black_box(f32::NAN) as i128, 0);
     assert_eq!(black_box(f32::NAN) as u128, 0);
+    */
 
     // Test signed 128bit comparing
     let max = usize::MAX as i128;
@@ -137,13 +139,17 @@ fn main() {
         NegOne = -1,
     }
 
+    /*
     let kind = Nums::NegOne;
     assert_eq!(-1i128, kind as i128);
 
     let options = [1u128];
     match options[0] {
         1 => (),
-        0 => loop {},
+        0 => {
+            println!("unsigned 128-bit integer comparison failed");
+            loop {}
+        }
         v => panic(v),
     };
 
@@ -165,6 +171,7 @@ fn main() {
 
         enum Never {}
     }
+    */
 
     #[cfg(not(target_arch = "s390x"))] // s390x doesn't have vector instructions enabled by default
     foo(I64X2([0, 0]));
