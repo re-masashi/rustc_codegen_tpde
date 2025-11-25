@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::{fs, process};
 
-fn load_config_file() -> Vec<(String, Option<String>)> {
-    fs::read_to_string("config.txt")
-        .unwrap()
+static CONFIG_FILE: LazyLock<HashMap<String, Option<String>>> = LazyLock::new(|| {
+    let mut config = fs::read_to_string("config.txt").unwrap();
+    config.push_str(&fs::read_to_string("config.user.txt").unwrap_or_default());
+    config
         .lines()
         .map(|line| if let Some((line, _comment)) = line.split_once('#') { line } else { line })
         .map(|line| line.trim())
@@ -15,21 +18,22 @@ fn load_config_file() -> Vec<(String, Option<String>)> {
             }
         })
         .collect()
+});
+
+#[allow(unused)]
+pub(crate) fn get_value(key: &str) -> Option<&str> {
+    CONFIG_FILE.get(key)?.as_deref()
 }
 
+#[allow(unused)]
 pub(crate) fn get_bool(name: &str) -> bool {
-    let values = load_config_file()
-        .into_iter()
-        .filter(|(key, _)| key == name)
-        .map(|(_, val)| val)
-        .collect::<Vec<_>>();
-    if values.is_empty() {
-        false
-    } else {
-        if values.iter().any(|val| val.is_some()) {
+    if let Some(value) = CONFIG_FILE.get(name) {
+        if value.is_some() {
             eprintln!("Boolean config `{}` has a value", name);
             process::exit(1);
         }
         true
+    } else {
+        false
     }
 }

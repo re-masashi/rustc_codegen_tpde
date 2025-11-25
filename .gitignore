@@ -19,3 +19,4 @@ perf.data.old
 # Development environment
 .clangd
 compile_flags.txt
+config.user.txt

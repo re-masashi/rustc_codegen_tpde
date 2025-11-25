@@ -1,5 +1,7 @@
 // This file is used by both the build system as well as cargo-tpde.rs
 
+include!("../build_system/config.rs");
+
 // Adapted from https://github.com/rust-lang/cargo/blob/6dc1deaddf62c7748c9097c7ea88e9ec77ff1a1a/src/cargo/core/compiler/build_context/target_info.rs#L750-L77
 pub(crate) fn rustflags_from_env(kind: &str) -> Vec<String> {
     // First try CARGO_ENCODED_RUSTFLAGS from the environment.
@@ -19,6 +21,17 @@ pub(crate) fn rustflags_from_env(kind: &str) -> Vec<String> {
 
     // No rustflags to be collected from the environment
     Vec::new()
+}
+
+pub(crate) fn rust_linker_flags() -> Vec<String> {
+    let mut flags = vec![];
+    if let Some(linker) = get_value("linker") {
+        flags.extend(["-C".to_owned(), format!("linker={linker}")]);
+    }
+    if let Some(ld_path) = get_value("ld-path") {
+        flags.extend(["-C".to_owned(), format!("link-arg=--ld-path={ld_path}")]);
+    }
+    flags
 }
 
 pub(crate) fn rustflags_to_cmd_env(cmd: &mut std::process::Command, kind: &str, flags: &[String]) {

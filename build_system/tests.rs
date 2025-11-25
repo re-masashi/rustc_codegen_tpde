@@ -5,7 +5,7 @@ use std::process::Command;
 use crate::path::{Dirs, RelPath};
 use crate::prepare::{GitRepo, apply_patches};
 use crate::rustc_info::get_default_sysroot;
-use crate::shared_utils::rustflags_from_env;
+use crate::shared_utils::{rust_linker_flags, rustflags_from_env};
 use crate::utils::{CargoProject, Compiler, LogGroup, ensure_empty_dir, spawn_and_wait};
 use crate::{CodegenBackend, SysrootKind, build_sysroot, config};
 
@@ -320,6 +320,7 @@ impl<'a> TestRunner<'a> {
         stdlib_source: PathBuf,
     ) -> Self {
         target_compiler.rustflags.extend(rustflags_from_env("RUSTFLAGS"));
+        target_compiler.rustflags.extend(rust_linker_flags());
         target_compiler.rustdocflags.extend(rustflags_from_env("RUSTDOCFLAGS"));
 
         let jit_supported = false;
