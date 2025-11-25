@@ -214,6 +214,7 @@ fn build_tpde_sysroot_for_triple(
         }
     };
     rustflags.push("--sysroot=/dev/null".to_owned());
+    rustflags.push("-Copt-level=0".to_owned()); // Disable optimization for sysroot builds for now, as it is not supported by the TPDE backend
 
     // Incremental compilation by default disables mir inlining. This leads to both a decent
     // compile perf and a significant runtime perf regression. As such forcefully enable mir
