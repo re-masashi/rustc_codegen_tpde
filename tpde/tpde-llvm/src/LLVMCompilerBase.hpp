@@ -2569,7 +2569,8 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_float_to_int(
     }();
     EncodeFnTy fn = fns[ty_idx][width_idx][sign][saturate];
 
-    if (saturate && bit_width % 32 != 0) {
+    if (saturate && bit_width != 8 && bit_width != 16 && bit_width != 32 &&
+        bit_width != 64) {
       // TODO: clamp result to smaller integer bounds
       return false;
     }
