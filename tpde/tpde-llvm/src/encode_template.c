@@ -274,21 +274,46 @@ u64 TARGET_V1 ctpopi64(u64 a) { return __builtin_popcountll(a); }
 
 u32 TARGET_V1 cttzi32_zp(u32 a) { return __builtin_ctz(a); }
 u64 TARGET_V1 cttzi64_zp(u64 a) { return __builtin_ctzll(a); }
+u128 cttzi128_zp(u128 a) {
+    u64 lo = a;
+    return lo ? __builtin_ctzll(lo) : 64 + __builtin_ctzll((u64)(a >> 64));
+}
 
 u32 TARGET_V1 cttzi8(u32 a) { return __builtin_ctz(0x100|a); }
 u32 TARGET_V1 cttzi16(u32 a) { return __builtin_ctz(0x10000|a); }
 u32 TARGET_V1 cttzi32(u32 a) { return !a ? 32 : __builtin_ctz(a); }
 u64 TARGET_V1 cttzi64(u64 a) { return !a ? 64 : __builtin_ctzll(a); }
+u128 TARGET_V1 cttzi128(u128 a) { 
+  if(!a) {
+    return 128;
+  }
+  u64 lo = a;
+  return lo ? __builtin_ctzll(lo) : 64 + __builtin_ctzll((u64)(a >> 64));
+}
 
 u32 TARGET_V1 ctlzi8_zp(u32 a) { return __builtin_clz((u8)a) - 24; }
 u32 TARGET_V1 ctlzi16_zp(u32 a) { return __builtin_clz((u16)a) - 16; }
 u32 TARGET_V1 ctlzi32_zp(u32 a) { return __builtin_clz(a); }
 u64 TARGET_V1 ctlzi64_zp(u64 a) { return __builtin_clzll(a); }
+u128 ctlzi128_zp(u128 a) {
+    u64 hi = a >> 64;
+    u64 lo = a;
+    return hi ? __builtin_clzll(hi) : 64 + __builtin_clzll(lo);
+}
 
 u32 TARGET_V1 ctlzi8(u32 a) { return !(u8)a ? 8 : __builtin_clz((u8)a) - 24; }
 u32 TARGET_V1 ctlzi16(u32 a) { return !(u16)a ? 16 : __builtin_clz((u16)a) - 16; }
 u32 TARGET_V1 ctlzi32(u32 a) { return !a ? 32 : __builtin_clz(a); }
 u64 TARGET_V1 ctlzi64(u64 a) { return !a ? 64 : __builtin_clzll(a); }
+u128 ctlzi128(u128 a) { 
+  if(!a) {
+    return 128;
+  }
+
+  u64 hi = a >> 64;
+  u64 lo = a;
+  return hi ? __builtin_clzll(hi) : 64 + __builtin_clzll(lo);
+}
 
 u32 TARGET_V1 bitreversei32(u32 a) { return __builtin_bitreverse32(a); }
 u64 TARGET_V1 bitreversei64(u64 a) { return __builtin_bitreverse64(a); }

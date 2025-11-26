@@ -111,11 +111,10 @@ struct EncodingTargetArm64 : EncodingTarget {
                                                "Jle",
                                                "Jal",
                                                "Jal"};
-    if (imm >= cond_codes.size()) {
-      // TODO actually fix this
-      return "Jeq";
-    }
     assert(imm < cond_codes.size() && "invalid jump condition");
+    if (imm >= cond_codes.size()) {
+      return "";
+    }
     return cond_codes[imm];
   }
 };

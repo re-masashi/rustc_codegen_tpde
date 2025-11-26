@@ -799,16 +799,22 @@ bool GenerationState::handle_terminator(llvm::raw_ostream &os,
       }
       assert(op.getImm() >= 0);
       jump_code = target->jump_code(op.getImm());
-      if (jump_code == "SETA8r" || jump_code == "CMOVA32rr") {
-        llvm::outs() << "something has gone horribly, horribly wrong\n";
-        inst->print(llvm::outs());
-        llvm::outs().flush();
-      }
     }
 
     if (jump_code.empty()) {
       llvm::errs() << "ERROR: encountered jump without known condition code\n";
-      return false;
+      llvm::errs() << "Offending instruction:\n";
+      inst->print(llvm::errs());
+      // TODO (mj, arm64): actually fix this, use analyzeBranch?
+      if (inst->getParent()
+              ->getParent()
+              ->getTarget()
+              .getTargetTriple()
+              .isAArch64()) {
+        jump_code = "Jeq";
+      } else {
+        return false;
+      }
     }
   }
   llvm::MachineBasicBlock *target = nullptr;

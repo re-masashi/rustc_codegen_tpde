@@ -1040,6 +1040,14 @@ void EncodingTargetX64::get_inst_candidates(
   } else if (Name == "INT3") {
     handle_default("INT3");
   }
+
+  handle_rm("TZCNT16rr", "TZCNT16rm", 1, "TZCNT16rr", "TZCNT16rm");
+  handle_rm("TZCNT32rr", "TZCNT32rm", 1, "TZCNT32rr", "TZCNT32rm");
+  handle_rm("TZCNT64rr", "TZCNT64rm", 1, "TZCNT64rr", "TZCNT64rm");
+
+  handle_rm("LZCNT16rr", "LZCNT16rm", 1, "LZCNT16rr", "LZCNT16rm");
+  handle_rm("LZCNT32rr", "LZCNT32rm", 1, "LZCNT32rr", "LZCNT32rm");
+  handle_rm("LZCNT64rr", "LZCNT64rm", 1, "LZCNT64rr", "LZCNT64rm");
 }
 
 } // namespace tpde_encgen::x64

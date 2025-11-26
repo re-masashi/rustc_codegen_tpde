@@ -5063,24 +5063,46 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
     case 16: width_idx = 1; break;
     case 32: width_idx = 2; break;
     case 64: width_idx = 3; break;
+    case 128: width_idx = 4; break;
     default: return false;
     }
 
-    using EncodeFnTy = bool (Derived::*)(GenericValuePart &&, ValuePart &&);
-    static constexpr EncodeFnTy encode_fns[4][2][2] = {
-#define F(n, op, suffix) &Derived::encode_##op##i##n##suffix
-        {  {F(8, ctlz, ), F(8, ctlz, _zp)},  {F(8, cttz, ), F(32, cttz, _zp)}},
-        {{F(16, ctlz, ), F(16, ctlz, _zp)}, {F(16, cttz, ), F(32, cttz, _zp)}},
-        {{F(32, ctlz, ), F(32, ctlz, _zp)}, {F(32, cttz, ), F(32, cttz, _zp)}},
-        {{F(64, ctlz, ), F(64, ctlz, _zp)}, {F(64, cttz, ), F(64, cttz, _zp)}},
-#undef F
-    };
     bool zero_is_poison =
         !llvm::cast<llvm::ConstantInt>(inst->getOperand(1))->isZero();
     bool is_cttz = intrin_id == llvm::Intrinsic::cttz;
-    EncodeFnTy fn = encode_fns[width_idx][is_cttz][zero_is_poison];
-    return (derived()->*fn)(this->val_ref(val).part(0),
-                            this->result_ref(inst).part(0));
+
+#define F(n, op, suffix) &Derived::encode_##op##i##n##suffix
+    if (width_idx >= 4) {
+      using EncodeFnTy = bool (Derived::*)(
+          GenericValuePart &&, GenericValuePart &&, ValuePart &&, ValuePart &&);
+      // [width_idx][is_cttz][zero_is_poison]
+      static constexpr EncodeFnTy encode_fns[1][2][2] = {
+          {{F(128, ctlz, ), F(128, ctlz, _zp)},
+           {F(128, cttz, ), F(128, cttz, _zp)}},
+      };
+
+      EncodeFnTy fn = encode_fns[width_idx - 4][is_cttz][zero_is_poison];
+      return (derived()->*fn)(this->val_ref(val).part(0),
+                              this->val_ref(val).part(1),
+                              this->result_ref(inst).part(0),
+                              this->result_ref(inst).part(1));
+    } else {
+      using EncodeFnTy = bool (Derived::*)(GenericValuePart &&, ValuePart &&);
+      // [width_idx][is_cttz][zero_is_poison]
+      static constexpr EncodeFnTy encode_fns[4][2][2] = {
+          {  {F(8, ctlz, ), F(8, ctlz, _zp)},{F(8, cttz, ), F(32, cttz, _zp)}           },
+          {{F(16, ctlz, ), F(16, ctlz, _zp)},
+           {F(16, cttz, ), F(32, cttz, _zp)}},
+          {{F(32, ctlz, ), F(32, ctlz, _zp)},
+           {F(32, cttz, ), F(32, cttz, _zp)}},
+          {{F(64, ctlz, ), F(64, ctlz, _zp)},
+           {F(64, cttz, ), F(64, cttz, _zp)}},
+      };
+      EncodeFnTy fn = encode_fns[width_idx][is_cttz][zero_is_poison];
+      return (derived()->*fn)(this->val_ref(val).part(0),
+                              this->result_ref(inst).part(0));
+    }
+#undef F
   }
   case llvm::Intrinsic::bitreverse: {
     auto *val = inst->getOperand(0);

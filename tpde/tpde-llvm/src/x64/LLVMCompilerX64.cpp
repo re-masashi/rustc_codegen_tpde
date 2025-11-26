@@ -2,12 +2,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include <iostream>
 #include <llvm/IR/InlineAsm.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/IntrinsicsX86.h>
-#include <llvm/Support/raw_ostream.h>
 #include <llvm/TargetParser/Triple.h>
 
 #include "LLVMAdaptor.hpp"
