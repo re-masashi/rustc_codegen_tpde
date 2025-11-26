@@ -1,6 +1,8 @@
 use std::env;
 use std::path::PathBuf;
 
+use pathsearch::find_executable_in_path;
+
 use crate::path::{Dirs, RelPath};
 use crate::rustc_info::get_file_name;
 use crate::shared_utils::{rust_linker_flags, rustflags_from_env, rustflags_to_cmd_env};
@@ -23,7 +25,7 @@ pub(crate) fn build_backend(dirs: &Dirs, bootstrap_host_compiler: &Compiler) -> 
         cmd.env("CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS", "true");
     }
 
-    cmd.env("LLVM_CONFIG", "llvm-config");
+    cmd.env("LLVM_CONFIG", find_executable_in_path("llvm-config").expect("llvm-config not found"));
     cmd.env("LLVM_LINK_SHARED", "true");
 
     cmd.arg("--release");
