@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #pragma once
 
+#include <algorithm>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/ConstantFolding.h>
@@ -4310,28 +4311,53 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_switch(
   const auto *switch_inst = llvm::cast<llvm::SwitchInst>(inst);
   llvm::Value *cond = switch_inst->getCondition();
   u32 width = cond->getType()->getIntegerBitWidth();
-  if (width > 64) {
+  if (width > 128) {
     return false;
   }
 
   // Collect cases, their target block and sort them in ascending order.
-  tpde::util::SmallVector<std::pair<u64, IRBlockRef>, 64> cases;
+  tpde::util::
+      SmallVector<std::pair<tpde::util::SmallVector<u64, 1>, IRBlockRef>, 64>
+          cases;
   assert(switch_inst->getNumCases() <= 200000);
   cases.reserve(switch_inst->getNumCases());
   for (auto case_val : switch_inst->cases()) {
-    cases.push_back(std::make_pair(
-        case_val.getCaseValue()->getZExtValue(),
+    llvm::APInt value =
+        case_val.getCaseValue()->getValue().zext((width + width % 64));
+    tpde::util::SmallVector<u64, 1> value_parts;
+    for (unsigned i = 0; i < (width - 1) / 64 + 1; i++) {
+      value_parts.emplace_back(value.getRawData()[i]);
+    }
+    cases.emplace_back(std::make_pair(
+        std::move(value_parts),
         this->adaptor->block_lookup_idx(case_val.getCaseSuccessor())));
   }
-  std::sort(cases.begin(), cases.end(), [](const auto &lhs, const auto &rhs) {
-    return lhs.first < rhs.first;
-  });
+
+  std::sort(
+      cases.begin(),
+      cases.end(),
+      [width](
+          const std::pair<tpde::util::SmallVector<u64, 1>, IRBlockRef> &lhs,
+          const std::pair<tpde::util::SmallVector<u64, 1>, IRBlockRef> &rhs) {
+        for (unsigned i = (width - 1) / 64; i >= 0; i--) {
+          if (lhs.first[i] < rhs.first[i]) {
+            return true;
+          } else if (lhs.first[i] > rhs.first[i]) {
+            return false;
+          }
+        }
+        return false; // Numbers are equal
+      });
 
   auto def = this->adaptor->block_lookup_idx(switch_inst->getDefaultDest());
 
   // cond must be ref-counted before generate_switch.
-  ScratchReg cond_scratch = this->val_ref(cond).part(0).into_scratch();
-  this->generate_switch(std::move(cond_scratch), width, def, cases);
+  tpde::util::SmallVector<ScratchReg, 1> cond_scratches;
+  ValueRef cond_ref = this->val_ref(cond);
+  for (unsigned i = 0; i < (width - 1) / 64 + 1; i++) {
+    cond_scratches.push_back(cond_ref.part(i).into_scratch());
+  }
+  this->generate_switch(std::move(cond_scratches), width, def, cases);
   return true;
 }
 

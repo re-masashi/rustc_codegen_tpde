@@ -6,6 +6,7 @@
 #include "tpde/AssemblerElf.hpp"
 #include "tpde/AssignmentPartRef.hpp"
 #include "tpde/CompilerBase.hpp"
+#include "tpde/FunctionWriter.hpp"
 #include "tpde/base.hpp"
 #include "tpde/x64/FunctionWriterX64.hpp"
 
@@ -515,17 +516,14 @@ struct CompilerX64 : BaseTy<Adaptor, Derived, Config> {
 
 private:
   /// @internal Emit compare of cmp_reg with case_value.
-  void switch_emit_cmp(AsmReg cmp_reg,
-                       AsmReg tmp_reg,
-                       u64 case_value,
+  void switch_emit_cmp(std::span<std::tuple<AsmReg, AsmReg, u64>> eq_case,
+                       const Label &cmp_end,
                        bool width_is_32) noexcept;
 
 public:
   /// @internal Jump if cmp_reg equals case_value.
   void switch_emit_cmpeq(Label case_label,
-                         AsmReg cmp_reg,
-                         AsmReg tmp_reg,
-                         u64 case_value,
+                         std::span<std::tuple<AsmReg, AsmReg, u64>> eq_case,
                          bool width_is_32) noexcept;
   /// @internal Emit bounds check and jump table.
   bool switch_emit_jump_table(Label default_label,
@@ -536,12 +534,11 @@ public:
                               u64 high_bound,
                               bool width_is_32) noexcept;
   /// @internal Jump if cmp_reg is greater than case_value.
-  void switch_emit_binary_step(Label case_label,
-                               Label gt_label,
-                               AsmReg cmp_reg,
-                               AsmReg tmp_reg,
-                               u64 case_value,
-                               bool width_is_32) noexcept;
+  void switch_emit_binary_step(
+      Label case_label,
+      Label gt_label,
+      std::span<std::tuple<AsmReg, AsmReg, u64>> eq_case,
+      bool width_is_32) noexcept;
 
   /// Generate code sequence to load address of sym into a register. This will
   /// generate a function call for dynamic TLS access models.
@@ -1814,18 +1811,25 @@ template <IRAdaptor Adaptor,
           template <typename, typename, typename> typename BaseTy,
           typename Config>
 void CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_cmp(
-    const AsmReg cmp_reg,
-    const AsmReg tmp_reg,
-    const u64 case_value,
+    std::span<std::tuple<AsmReg, AsmReg, u64>> eq_case,
+    const Label &cmp_end,
     const bool width_is_32) noexcept {
   if (width_is_32) {
-    ASM(CMP32ri, cmp_reg, case_value);
+    ASM(CMP32ri, std::get<0>(eq_case[0]), std::get<2>(eq_case[0]));
   } else {
-    if ((i64)((i32)case_value) == (i64)case_value) {
-      ASM(CMP64ri, cmp_reg, case_value);
-    } else {
-      this->materialize_constant(&case_value, Config::GP_BANK, 8, tmp_reg);
-      ASM(CMP64rr, cmp_reg, tmp_reg);
+    for (unsigned i = 0; i < eq_case.size(); i++) {
+      AsmReg &cmp_reg = std::get<0>(eq_case[i]);
+      AsmReg &tmp_reg = std::get<1>(eq_case[i]);
+      u64 case_value = std::get<2>(eq_case[i]);
+      if ((i64)((i32)case_value) == (i64)case_value) {
+        ASM(CMP64ri, cmp_reg, case_value);
+      } else {
+        this->materialize_constant(&case_value, Config::GP_BANK, 8, tmp_reg);
+        ASM(CMP64rr, cmp_reg, tmp_reg);
+      }
+      if (i != eq_case.size() - 1) {
+        generate_raw_jump(Jump::jne, cmp_end);
+      }
     }
   }
 }
@@ -1836,11 +1840,11 @@ template <IRAdaptor Adaptor,
           typename Config>
 void CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_cmpeq(
     const Label case_label,
-    const AsmReg cmp_reg,
-    const AsmReg tmp_reg,
-    const u64 case_value,
+    std::span<std::tuple<AsmReg, AsmReg, u64>> eq_case,
     const bool width_is_32) noexcept {
-  switch_emit_cmp(cmp_reg, tmp_reg, case_value, width_is_32);
+  Label cmp_end = this->text_writer.label_create();
+  switch_emit_cmp(eq_case, cmp_end, width_is_32);
+  this->label_place(cmp_end);
   generate_raw_jump(Jump::je, case_label);
 }
 
@@ -1858,10 +1862,16 @@ bool CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_jump_table(
     bool width_is_32) noexcept {
   // NB: we must not evict any registers here.
   if (low_bound != 0) {
-    switch_emit_cmp(cmp_reg, tmp_reg, low_bound, width_is_32);
+    // Noteworthy: default_label is not actually used here
+    std::array<std::tuple<AsmReg, AsmReg, u64>, 1> low_case = {
+        std::make_tuple(cmp_reg, tmp_reg, low_bound)};
+    switch_emit_cmp(low_case, default_label, width_is_32);
     generate_raw_jump(Jump::jb, default_label);
   }
-  switch_emit_cmp(cmp_reg, tmp_reg, high_bound, width_is_32);
+  // Noteworthy: default_label is not actually used here
+  std::array<std::tuple<AsmReg, AsmReg, u64>, 1> high_case = {
+      std::make_tuple(cmp_reg, tmp_reg, high_bound)};
+  switch_emit_cmp(high_case, default_label, width_is_32);
   generate_raw_jump(Jump::ja, default_label);
 
   if (width_is_32) {
@@ -1914,11 +1924,9 @@ template <IRAdaptor Adaptor,
 void CompilerX64<Adaptor, Derived, BaseTy, Config>::switch_emit_binary_step(
     const Label case_label,
     const Label gt_label,
-    const AsmReg cmp_reg,
-    const AsmReg tmp_reg,
-    const u64 case_value,
+    std::span<std::tuple<AsmReg, AsmReg, u64>> eq_case,
     const bool width_is_32) noexcept {
-  switch_emit_cmpeq(case_label, cmp_reg, tmp_reg, case_value, width_is_32);
+  switch_emit_cmpeq(case_label, eq_case, width_is_32);
   generate_raw_jump(Jump::ja, gt_label);
 }
 
