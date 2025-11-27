@@ -4310,36 +4310,28 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_switch(
   const auto *switch_inst = llvm::cast<llvm::SwitchInst>(inst);
   llvm::Value *cond = switch_inst->getCondition();
   u32 width = cond->getType()->getIntegerBitWidth();
-  if (width > 128) {
+  if (width > 64) {
     return false;
   }
 
   // Collect cases, their target block and sort them in ascending order.
-  tpde::util::SmallVector<std::pair<const u64 *, IRBlockRef>, 64> cases;
+  tpde::util::SmallVector<std::pair<u64, IRBlockRef>, 64> cases;
   assert(switch_inst->getNumCases() <= 200000);
   cases.reserve(switch_inst->getNumCases());
   for (auto case_val : switch_inst->cases()) {
     cases.push_back(std::make_pair(
-        case_val.getCaseValue()->getValue().getRawData(),
+        case_val.getCaseValue()->getZExtValue(),
         this->adaptor->block_lookup_idx(case_val.getCaseSuccessor())));
   }
-  std::sort(cases.begin(),
-            cases.end(),
-            [width](const std::pair<const u64 *, IRBlockRef> &lhs,
-                    const std::pair<const u64 *, IRBlockRef> &rhs) {
-              for (unsigned i = width / 8 - 1; i >= 0; i--) {
-                if (lhs.first[i] < rhs.first[i]) {
-                  return true;
-                } else if (lhs.first[i] > rhs.first[i]) {
-                  return false;
-                }
-              }
-              return false; // Numbers are equal
-            });
+  std::sort(cases.begin(), cases.end(), [](const auto &lhs, const auto &rhs) {
+    return lhs.first < rhs.first;
+  });
 
   auto def = this->adaptor->block_lookup_idx(switch_inst->getDefaultDest());
 
-  this->generate_switch(this->val_ref(cond), width, def, cases);
+  // cond must be ref-counted before generate_switch.
+  ScratchReg cond_scratch = this->val_ref(cond).part(0).into_scratch();
+  this->generate_switch(std::move(cond_scratch), width, def, cases);
   return true;
 }
 

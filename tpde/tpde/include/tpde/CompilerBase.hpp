@@ -487,10 +487,10 @@ public:
   /// register. The cases must be sorted and every case value must appear at
   /// most once.
   void generate_switch(
-      ValueRef cond,
+      ScratchReg &&cond,
       u32 width,
       IRBlockRef default_block,
-      std::span<const std::pair<const u64 *, IRBlockRef>> cases) noexcept;
+      std::span<const std::pair<u64, IRBlockRef>> cases) noexcept;
 
   /// @}
 
@@ -1717,27 +1717,30 @@ void CompilerBase<Adaptor, Derived, Config>::generate_cond_branch(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::generate_switch(
-    ValueRef value,
+    ScratchReg &&cond,
     u32 width,
     IRBlockRef default_block,
-    std::span<const std::pair<const u64 *, IRBlockRef>> cases) noexcept {
-  assert(width <= 128);
+    std::span<const std::pair<u64, IRBlockRef>> cases) noexcept {
+  // This function takes cond as a ScratchReg as opposed to a ValuePart, because
+  // the ValueRef for the condition must be ref-counted before we enter the
+  // branch region.
+
+  assert(width <= 64);
   // We don't support sections with more than 4 GiB, so switches with more than
   // 4G cases are impossible to support.
   assert(cases.size() < UINT32_MAX && "large switches are unsupported");
 
-  // We must not evict any registers in the branching code, as we don't track
-  // the individual value states per block. Hence, we must not allocate any
-  // registers (e.g., for constants, jump table address) below.
-  RegBank reg_bank = derived()->switch_reg_bank(width);
-  ScratchReg tmp_scratch{this};
-  AsmReg cmp_reg = derived()->switch_cmp_reg(value, width);
-  u32 dst_width = util::align_up(width, 32);
-  if (width != dst_width) {
+  AsmReg cmp_reg = cond.cur_reg();
+  bool width_is_32 = width <= 32;
+  if (u32 dst_width = util::align_up(width, 32); width != dst_width) {
     derived()->generate_raw_intext(cmp_reg, cmp_reg, false, width, dst_width);
   }
 
-  AsmReg tmp_reg = tmp_scratch.alloc(reg_bank);
+  // We must not evict any registers in the branching code, as we don't track
+  // the individual value states per block. Hence, we must not allocate any
+  // registers (e.g., for constants, jump table address) below.
+  ScratchReg tmp_scratch{this};
+  AsmReg tmp_reg = tmp_scratch.alloc_gp();
 
   const auto spilled = this->spill_before_branch();
   this->begin_branch_region();
@@ -1773,18 +1776,18 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
                                      cmp_reg,
                                      tmp_reg,
                                      cases[begin + i].first,
-                                     width);
+                                     width_is_32);
       }
 
       derived()->generate_raw_jump(Derived::Jump::jmp, default_label);
       return;
     }
 
-    if (width <= 64 && false) { // TODO (mj): support jump tables for 128-bit
-                                // switch statements?
+    if (width <= 64 && false) { // TODO (mj): support jump tables for
+                                // 128-bit switch statements?
       // check if the density of the values is high enough to warrant building
       // a jump table
-      auto range = cases[end - 1].first[0] - cases[begin].first[0];
+      auto range = cases[end - 1].first - cases[begin].first;
       // we will get wrong results if range is -1 so skip the jump table if
       // that is the case
       if (range != 0xFFFF'FFFF'FFFF'FFFF && (range / num_cases) < 8) {
@@ -1802,7 +1805,7 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
         } else {
           label_vec.resize(range, default_label);
           for (auto i = 0u; i < num_cases; ++i) {
-            label_vec[cases[begin + i].first[0] - cases[begin].first[0]] =
+            label_vec[cases[begin + i].first - cases[begin].first] =
                 case_labels[begin + i];
           }
           labels = std::span{label_vec.begin(), range};
@@ -1815,7 +1818,7 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
                                               tmp_reg,
                                               cases[begin].first,
                                               cases[end - 1].first,
-                                              width)) {
+                                              width_is_32)) {
           return;
         }
       }
@@ -1834,7 +1837,7 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
                                        cmp_reg,
                                        tmp_reg,
                                        half_value,
-                                       width);
+                                       width_is_32);
     // search the lower half
     self(begin, begin + half_len, self);
 
@@ -1851,8 +1854,8 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
       Derived::Jump::jmp, default_block, false, false);
 
   for (const auto &[label, target] : case_blocks) {
-    // Branch predictors typically have problems if too many branches follow too
-    // closely. Ensure a minimum alignment.
+    // Branch predictors typically have problems if too many branches
+    // follow too closely. Ensure a minimum alignment.
     this->text_writer.align(8);
     this->label_place(label);
     derived()->generate_branch_to_block(
@@ -2042,8 +2045,8 @@ void CompilerBase<Adaptor, Derived, Config>::move_to_phi_nodes_impl(
   // fill in the refcount
   auto all_zero_ref = true;
   for (auto &node : nodes) {
-    // We don't need to do anything for PHIs that don't reference other PHIs or
-    // self-referencing PHIs.
+    // We don't need to do anything for PHIs that don't reference other PHIs
+    // or self-referencing PHIs.
     bool incoming_is_phi = adaptor->val_is_phi(node.incoming_val);
     if (!incoming_is_phi || node.incoming_val == node.phi) {
       continue;
@@ -2052,8 +2055,8 @@ void CompilerBase<Adaptor, Derived, Config>::move_to_phi_nodes_impl(
     ValLocalIdx inc_local_idx = adaptor->val_local_idx(node.incoming_val);
     auto it = std::lower_bound(nodes.begin(), nodes.end(), inc_local_idx);
     if (it == nodes.end() || it->phi != node.incoming_val) {
-      // Incoming value is a PHI node, but it's not from our block, so we don't
-      // need to be particularly careful when assigning values.
+      // Incoming value is a PHI node, but it's not from our block, so we
+      // don't need to be particularly careful when assigning values.
       continue;
     }
     node.incoming_phi_local_idx = inc_local_idx;
@@ -2419,8 +2422,8 @@ bool CompilerBase<Adaptor, Derived, Config>::compile_block(
 
 #ifndef NDEBUG
   // Some consistency checks. Register assignment information must match, all
-  // used registers must have an assignment (no temporaries across blocks), and
-  // fixed registers must be fixed assignments.
+  // used registers must have an assignment (no temporaries across blocks),
+  // and fixed registers must be fixed assignments.
   for (auto reg_id : register_file.used_regs()) {
     Reg reg{reg_id};
     assert(register_file.reg_local_idx(reg) != INVALID_VAL_LOCAL_IDX);
