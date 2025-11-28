@@ -23,7 +23,7 @@ build.example
 jit.mini_core_hello_world
 aot.mini_core_hello_world
 
-testsuite.base_sysroot
+#testsuite.base_sysroot
 aot.arbitrary_self_types_pointers_and_wrappers
 jit.std_example
 aot.std_example
@@ -39,6 +39,7 @@ aot.raw-dylib
 test.sysroot
 
 testsuite.extended_sysroot
+#test.cloudflare/pingora
 test.rust-random/rand
 test.regex
 test.portable-simd

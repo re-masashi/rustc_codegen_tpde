@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::fs::read_link;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,6 +12,7 @@ pub(crate) fn prepare(dirs: &Dirs) {
     std::fs::create_dir_all(&dirs.download_dir).unwrap();
     crate::tests::RAND_REPO.fetch(dirs);
     crate::tests::REGEX_REPO.fetch(dirs);
+    crate::tests::PINGORA_REPO.fetch(dirs);
 }
 
 pub(crate) struct GitRepo {
@@ -38,14 +40,40 @@ fn hash_file(file: &std::path::Path) -> u64 {
     std::hash::Hasher::finish(&hasher)
 }
 
+fn hash_symlink(file: &std::path::Path) -> u64 {
+    let target = std::fs::read_link(file).unwrap();
+    let contents = target.as_os_str().as_encoded_bytes();
+    #[allow(deprecated)]
+    let mut hasher = std::hash::SipHasher::new();
+    // The following is equivalent to
+    //   std::hash::Hash::hash(&contents, &mut hasher);
+    // but gives the same result independent of host byte order.
+    hasher.write_usize(contents.len().to_le());
+    Hash::hash_slice(&contents, &mut hasher);
+    std::hash::Hasher::finish(&hasher)
+}
+
 fn hash_dir(dir: &std::path::Path) -> u64 {
     let mut sub_hashes = std::collections::BTreeMap::new();
     for entry in std::fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
-        if entry.file_type().unwrap().is_dir() {
+        let meta = entry.metadata().unwrap();
+        let symlink_target = if meta.is_symlink() {
+            entry.path().parent().and_then(|path| {
+                read_link(&entry.path()).ok().map(|link_target| path.join(link_target))
+            })
+        } else {
+            None
+        };
+        if meta.is_dir() {
             sub_hashes.insert(
                 entry.file_name().to_str().unwrap().to_owned(),
                 hash_dir(&entry.path()).to_le(),
+            );
+        } else if let Some(_) = symlink_target {
+            sub_hashes.insert(
+                entry.file_name().to_str().unwrap().to_owned(),
+                hash_symlink(&entry.path()),
             );
         } else {
             sub_hashes.insert(

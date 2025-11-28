@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::fs::read_link;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -215,9 +216,20 @@ pub(crate) fn copy_dir_recursively(from: &Path, to: &Path) {
         }
         let src = from.join(&filename);
         let dst = to.join(&filename);
+        let meta = entry.metadata().unwrap();
+        let symlink_target = if meta.is_symlink() {
+            entry.path().parent().and_then(|path| {
+                read_link(&entry.path()).ok().map(|link_target| path.join(link_target))
+            })
+        } else {
+            None
+        };
         if entry.metadata().unwrap().is_dir() {
             fs::create_dir(&dst).unwrap_or_else(|e| panic!("failed to create {dst:?}: {e}"));
             copy_dir_recursively(&src, &dst);
+        } else if let Some(link_target) = symlink_target {
+            std::os::unix::fs::symlink(dst.join(&link_target), &dst)
+                .unwrap_or_else(|e| panic!("failed to link {dst:?}->{link_target:?}: {e}"));
         } else {
             fs::copy(&src, &dst).unwrap_or_else(|e| panic!("failed to copy {src:?}->{dst:?}: {e}"));
         }

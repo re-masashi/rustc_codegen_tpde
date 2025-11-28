@@ -121,6 +121,16 @@ const BASE_SYSROOT_SUITE: &[TestCase] = &[
     }),
 ];
 
+pub(crate) static PINGORA_REPO: GitRepo = GitRepo::github(
+    "cloudflare",
+    "pingora",
+    "b3c186177e8ff59f047ed05aa7b88735bb623c2f",
+    "5ab217d990a55997",
+    "pingora",
+);
+
+static PINGORA: CargoProject = CargoProject::new(&PINGORA_REPO.source_dir(), "pingora_target");
+
 pub(crate) static RAND_REPO: GitRepo = GitRepo::github(
     "rust-random",
     "rand",
@@ -219,6 +229,22 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
             // FIXME remove --tests once examples work: https://github.com/rust-lang/portable-simd/issues/470
             test_cmd.arg("-q").arg("--tests");
             spawn_and_wait(test_cmd);
+        }
+    }),
+    TestCase::custom("test.cloudflare/pingora", &|runner| {
+        PINGORA_REPO.patch(&runner.dirs);
+
+        PINGORA.clean(&runner.dirs);
+
+        if runner.is_native {
+            let mut test_cmd = PINGORA.test(&runner.target_compiler, &runner.dirs);
+            test_cmd.arg("--workspace").arg("--").arg("-q");
+            spawn_and_wait(test_cmd);
+        } else {
+            eprintln!("Cross-Compiling: Not running tests");
+            let mut build_cmd = PINGORA.build(&runner.target_compiler, &runner.dirs);
+            build_cmd.arg("--workspace").arg("--tests");
+            spawn_and_wait(build_cmd);
         }
     }),
 ];
