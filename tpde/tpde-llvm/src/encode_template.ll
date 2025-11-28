@@ -49,3 +49,15 @@ entry:
   %2 = call { i128, i1 } @llvm.ssub.with.overflow.i128(i128 %0, i128 %1)
   ret { i128, i1 } %2
 }
+
+; --------------------------
+; 1-bit vector operations
+; --------------------------
+
+declare i1 @llvm.vector.reduce.and.v16i1(<16 x i1>)
+
+define i1 @reduce_and_v16i1(<16 x i1> %0) {
+entry:
+  %1 = call i1 @llvm.vector.reduce.and.v16i1(<16 x i1> %0)
+  ret i1 %1
+}

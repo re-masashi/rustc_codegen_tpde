@@ -752,7 +752,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("SADDLVv8i8v", "SADDLV8b");
   case_default("UADDLVv8i8v", "UADDLV8b");
   case_default("SMINVv8i8v", "SMINV8b");
+  case_default("SMINVv16i8v", "SMINV16b");
   case_default("UMINVv8i8v", "UMINV8b");
+  case_default("UMINVv16i8v", "UMINV16b");
   case_default("SMAXVv8i8v", "SMAXV8b");
   case_default("UMAXVv8i8v", "UMAXV8b");
   case_default("ADDVv8i8v", "ADDV8b");

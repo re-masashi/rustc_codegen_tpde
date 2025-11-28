@@ -5472,6 +5472,15 @@ template <typename Adaptor, typename Derived, typename Config>
 bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_vector_reduce(
     const llvm::IntrinsicInst *inst, const ValInfo &info) noexcept {
   if (inst->getType()->isIntegerTy(1)) {
+    switch (inst->getIntrinsicID()) {
+    case llvm::Intrinsic::vector_reduce_and: {
+      derived()->encode_reduce_and_v16i1(
+          this->val_ref(inst->getOperand(0)).part(0),
+          this->result_ref(inst).part(0));
+      return true;
+    }
+    default: return false;
+    }
     // i1 needs special handling
     // and/mul/umin/smax = all bits one
     // or/umax/smin = any bit one
