@@ -9,6 +9,7 @@
 
 # .cargo/config.toml is not respected by the build system, so use these options to override the linker.
 # Should probably go in config.user.txt
+# These options will be ignored when cross linking.
 #linker=clang
 #ld-path=wild
 
@@ -23,7 +24,7 @@ build.example
 jit.mini_core_hello_world
 aot.mini_core_hello_world
 
-#testsuite.base_sysroot
+testsuite.base_sysroot
 aot.arbitrary_self_types_pointers_and_wrappers
 jit.std_example
 aot.std_example

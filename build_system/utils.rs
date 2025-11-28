@@ -21,45 +21,51 @@ pub(crate) struct Compiler {
 
 impl Compiler {
     pub(crate) fn set_cross_linker_and_runner(&mut self) {
+        let cross_linker;
+        macro_rules! arch_cross {
+            ($arch:literal) => {{
+                let possible_paths =
+                    &[format!("{}-linux-gnu-gcc", $arch), format!("{}-suse-linux-gcc", $arch)];
+                cross_linker = possible_paths
+                    .iter()
+                    .filter_map(|path| pathsearch::find_executable_in_path(path))
+                    .map(|path| path.to_string_lossy().to_string())
+                    .next()
+                    .expect("No suitable cross linker found");
+                let sysroot =
+                    Command::new(&cross_linker).arg("--print-sysroot").output().unwrap().stdout;
+                self.runner = vec![
+                    format!("qemu-{}", $arch),
+                    "-L".to_owned(),
+                    String::from_utf8_lossy(&sysroot).trim().to_string(),
+                ];
+            }};
+        }
+
         match self.triple.as_str() {
             "aarch64-unknown-linux-gnu" => {
                 // We are cross-compiling for aarch64. Use the correct linker and run tests in qemu.
-                self.rustflags.push("-Clinker=aarch64-linux-gnu-gcc".to_owned());
-                self.rustdocflags.push("-Clinker=aarch64-linux-gnu-gcc".to_owned());
-                self.runner = vec![
-                    "qemu-aarch64".to_owned(),
-                    "-L".to_owned(),
-                    "/usr/aarch64-linux-gnu".to_owned(),
-                ];
+                arch_cross!("aarch64");
             }
             "s390x-unknown-linux-gnu" => {
                 // We are cross-compiling for s390x. Use the correct linker and run tests in qemu.
-                self.rustflags.push("-Clinker=s390x-linux-gnu-gcc".to_owned());
-                self.rustdocflags.push("-Clinker=s390x-linux-gnu-gcc".to_owned());
-                self.runner = vec![
-                    "qemu-s390x".to_owned(),
-                    "-L".to_owned(),
-                    "/usr/s390x-linux-gnu".to_owned(),
-                ];
+                arch_cross!("s390x");
             }
             "riscv64gc-unknown-linux-gnu" => {
                 // We are cross-compiling for riscv64. Use the correct linker and run tests in qemu.
-                self.rustflags.push("-Clinker=riscv64-linux-gnu-gcc".to_owned());
-                self.rustdocflags.push("-Clinker=riscv64-linux-gnu-gcc".to_owned());
-                self.runner = vec![
-                    "qemu-riscv64".to_owned(),
-                    "-L".to_owned(),
-                    "/usr/riscv64-linux-gnu".to_owned(),
-                ];
+                arch_cross!("riscv64");
             }
             "x86_64-pc-windows-gnu" => {
                 // We are cross-compiling for Windows. Run tests in wine.
                 self.runner = vec!["wine".to_owned()];
+                return;
             }
             _ => {
-                eprintln!("Unknown non-native platform");
+                panic!("Unknown non-native platform");
             }
         }
+        self.rustflags.push(format!("-Clinker={cross_linker}"));
+        self.rustdocflags.push(format!("-Clinker={cross_linker}"));
     }
 
     pub(crate) fn run_with_runner(&self, program: impl AsRef<OsStr>) -> Command {

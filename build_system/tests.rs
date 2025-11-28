@@ -346,7 +346,9 @@ impl<'a> TestRunner<'a> {
         stdlib_source: PathBuf,
     ) -> Self {
         target_compiler.rustflags.extend(rustflags_from_env("RUSTFLAGS"));
-        target_compiler.rustflags.extend(rust_linker_flags());
+        if is_native {
+            target_compiler.rustflags.extend(rust_linker_flags());
+        }
         target_compiler.rustdocflags.extend(rustflags_from_env("RUSTDOCFLAGS"));
 
         let jit_supported = false;

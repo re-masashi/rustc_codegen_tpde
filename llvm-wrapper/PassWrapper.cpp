@@ -439,6 +439,13 @@ LLVMRustWriteOutputFile(LLVMTargetMachineRef Target, LLVMPassManagerRef PMR,
 
   std::unique_ptr<tpde_llvm::LLVMCompiler> TpdeCompiler =
       tpde_llvm::LLVMCompiler::create(Triple(unwrap(M)->getTargetTriple()));
+  if (!TpdeCompiler) {
+    std::string error = std::string("Target ") +
+                        unwrap(M)->getTargetTriple().str() +
+                        " is not supported by the TPDE codegen backend";
+    LLVMRustSetLastError(error.c_str());
+    return LLVMRustResult::Failure;
+  }
   std::vector<uint8_t> TpdeOutputBuffer;
   TpdeOutputBuffer.reserve(1024 * 4);
   if (!TpdeCompiler->compile_to_elf(*unwrap(M), TpdeOutputBuffer)) {

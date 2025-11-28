@@ -23,6 +23,7 @@ pub(crate) fn rustflags_from_env(kind: &str) -> Vec<String> {
     Vec::new()
 }
 
+#[allow(unused)]
 pub(crate) fn rust_linker_flags() -> Vec<String> {
     let mut flags = vec![];
     if let Some(linker) = get_value("linker") {
