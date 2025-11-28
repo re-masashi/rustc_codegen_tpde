@@ -790,31 +790,35 @@ bool GenerationState::handle_terminator(llvm::raw_ostream &os,
   std::string jump_code;
 
   if (inst->isUnconditionalBranch()) {
-    jump_code = "jmp";
+    jump_code = "Derived::Jump::jmp";
   } else {
-    // just assume the first immediate is the condition code
-    for (const auto &op : inst->explicit_uses()) {
-      if (!op.isImm()) {
-        continue;
+    bool is_direct_test = true;
+    for (const auto &op : inst->implicit_operands()) {
+      if (op.isReg() && op.isUse() && op.getReg()) {
+        is_direct_test = false;
+        break;
       }
-      assert(op.getImm() >= 0);
-      jump_code = target->jump_code(op.getImm());
+    }
+    if (!is_direct_test) { // Uses condition flags (x64, aarch64)
+      // just assume the first immediate is the condition code
+      for (const auto &op : inst->explicit_uses()) {
+        if (!op.isImm()) {
+          continue;
+        }
+        assert(op.getImm() >= 0);
+        jump_code = std::string("Derived::Jump::")
+                        .append(target->jump_code(op.getImm()));
+      }
+    } else { // Uses direct test (aarch64)
+      jump_code = std::string("typename Derived::")
+                      .append(target->direct_test_jump_code(inst));
     }
 
     if (jump_code.empty()) {
       llvm::errs() << "ERROR: encountered jump without known condition code\n";
       llvm::errs() << "Offending instruction:\n";
       inst->print(llvm::errs());
-      // TODO (mj, arm64): actually fix this, use analyzeBranch?
-      if (inst->getParent()
-              ->getParent()
-              ->getTarget()
-              .getTargetTriple()
-              .isAArch64()) {
-        jump_code = "Jeq";
-      } else {
-        return false;
-      }
+      return false;
     }
   }
   llvm::MachineBasicBlock *target = nullptr;
@@ -832,8 +836,8 @@ bool GenerationState::handle_terminator(llvm::raw_ostream &os,
     return false;
   }
 
-  os << "  derived()->generate_raw_jump(Derived::Jump::" << jump_code
-     << ", block" << target->getNumber() << "_label);\n\n";
+  os << "  derived()->generate_raw_jump(" << jump_code << ", block"
+     << target->getNumber() << "_label);\n\n";
   return true;
 }
 

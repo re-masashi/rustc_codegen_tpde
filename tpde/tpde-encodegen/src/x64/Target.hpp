@@ -207,6 +207,13 @@ struct EncodingTargetX64 : EncodingTarget {
     assert(imm < cond_codes.size() && "invalid jump condition");
     return cond_codes[imm];
   }
+
+  std::string direct_test_jump_code(llvm::MachineInstr *inst
+                                    [[maybe_unused]]) override {
+    llvm::errs() << "ERROR: x86 has no direct test jump codes\n";
+    assert(false);
+    return "";
+  }
 };
 
 } // namespace tpde_encgen::x64

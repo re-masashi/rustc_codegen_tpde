@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #pragma once
 #include <format>
+#include <llvm/MC/MCInstrInfo.h>
 #include <llvm/Support/raw_ostream.h>
 #include <string>
 #include <string_view>
@@ -116,6 +117,46 @@ struct EncodingTargetArm64 : EncodingTarget {
       return "";
     }
     return cond_codes[imm];
+  }
+
+  std::string direct_test_jump_code(llvm::MachineInstr *inst) override {
+    const llvm::TargetMachine &TM = inst->getMF()->getTarget();
+    const llvm::MCInstrInfo *MCII = TM.getMCInstrInfo();
+    const llvm::MCRegisterInfo *TRI = TM.getMCRegisterInfo();
+    llvm::StringRef Name = MCII->getName(inst->getOpcode());
+
+    if (Name == "TBNZX" || Name == "TBNZW") {
+      std::string jump =
+          "Jump(Derived::Jump::Tbnz, AsmReg(u8(" +
+          std::to_string(TRI->getEncodingValue(inst->getOperand(0).getReg())) +
+          ")), u8(" + std::to_string(inst->getOperand(1).getImm()) + "))";
+      return jump;
+    }
+    if (Name == "TBZX" || Name == "TBZW") {
+      std::string jump =
+          "Jump(Derived::Jump::Tbz, AsmReg(u8(" +
+          std::to_string(TRI->getEncodingValue(inst->getOperand(0).getReg())) +
+          ")), u8(" + std::to_string(inst->getOperand(1).getImm()) + "))";
+      return jump;
+    }
+    if (Name == "CBNZX" || Name == "CBNZW") {
+      std::string jump =
+          "Jump(Derived::Jump::Cbnz, AsmReg(u8(" +
+          std::to_string(TRI->getEncodingValue(inst->getOperand(0).getReg())) +
+          ")), " + std::string(+Name.ends_with("W") ? "true" : "false") + ")";
+      return jump;
+    }
+
+    if (Name == "CBZX" || Name == "CBZW") {
+      std::string jump =
+          "Jump(Derived::Jump::Cbz, AsmReg(u8(" +
+          std::to_string(TRI->getEncodingValue(inst->getOperand(0).getReg())) +
+          ")), " + std::string(+Name.ends_with("W") ? "true" : "false") + ")";
+      return jump;
+    }
+
+    assert(false && "invalid jump condition");
+    return "";
   }
 };
 

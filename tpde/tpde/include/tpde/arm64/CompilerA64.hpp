@@ -1965,9 +1965,9 @@ void CompilerA64<Adaptor, Derived, BaseTy, Config>::switch_emit_cmp(
       cmp_reg = std::get<0>(eq_case[i]);
       tmp_reg = std::get<1>(eq_case[i]);
       case_value = std::get<2>(eq_case[i]);
-      if (!ASMIF(CCMPxi, cmp_reg, case_value, 0b1110, DA_EQ)) {
+      if (!ASMIF(CCMPxi, cmp_reg, case_value, DA_NE, DA_EQ)) {
         materialize_constant(case_value, Config::GP_BANK, 4, tmp_reg);
-        ASM(CCMPx, cmp_reg, tmp_reg, 0b1110, DA_EQ);
+        ASM(CCMPx, cmp_reg, tmp_reg, DA_NE, DA_EQ);
       }
     }
   }
