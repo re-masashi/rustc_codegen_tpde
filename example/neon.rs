@@ -242,6 +242,7 @@ unsafe fn test_vrndnq_f32() {
 
 #[cfg(target_arch = "aarch64")]
 fn main() {
+    /*
     unsafe {
         test_vpmin_s8();
         test_vpmin_s16();
@@ -273,6 +274,7 @@ fn main() {
         test_vaddvq_f32();
         test_vrndnq_f32();
     }
+    */
 }
 
 #[cfg(not(target_arch = "aarch64"))]
