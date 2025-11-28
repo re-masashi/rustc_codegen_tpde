@@ -5313,63 +5313,80 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_overflow_intrin(
   }
   const auto width = ty->getIntegerBitWidth();
 
-  if (width == 128) {
-    if (!derived()->handle_overflow_intrin_128(op,
-                                               lhs.part(0),
-                                               lhs.part(1),
-                                               rhs.part(0),
-                                               rhs.part(1),
-                                               res.part(0),
-                                               res.part(1),
-                                               res.part(2))) {
-      return false;
-    }
-    return true;
-  }
-
   u32 width_idx = 0;
   switch (width) {
   case 8: width_idx = 0; break;
   case 16: width_idx = 1; break;
   case 32: width_idx = 2; break;
   case 64: width_idx = 3; break;
+  case 128: width_idx = 4; break;
   default: return false;
   }
 
-  using EncodeFnTy = bool (Derived::*)(
-      GenericValuePart &&, GenericValuePart &&, ValuePart &&, ValuePart &&);
-  std::array<std::array<EncodeFnTy, 4>, 6> encode_fns = {
-      {
-       {&Derived::encode_of_add_u8,
-           &Derived::encode_of_add_u16,
-           &Derived::encode_of_add_u32,
-           &Derived::encode_of_add_u64},
-       {&Derived::encode_of_add_i8,
-           &Derived::encode_of_add_i16,
-           &Derived::encode_of_add_i32,
-           &Derived::encode_of_add_i64},
-       {&Derived::encode_of_sub_u8,
-           &Derived::encode_of_sub_u16,
-           &Derived::encode_of_sub_u32,
-           &Derived::encode_of_sub_u64},
-       {&Derived::encode_of_sub_i8,
-           &Derived::encode_of_sub_i16,
-           &Derived::encode_of_sub_i32,
-           &Derived::encode_of_sub_i64},
-       {&Derived::encode_of_mul_u8,
-           &Derived::encode_of_mul_u16,
-           &Derived::encode_of_mul_u32,
-           &Derived::encode_of_mul_u64},
-       {&Derived::encode_of_mul_i8,
-           &Derived::encode_of_mul_i16,
-           &Derived::encode_of_mul_i32,
-           &Derived::encode_of_mul_i64},
-       }
-  };
+  if (width_idx >= 4) {
+    using EncodeFnTy = bool (Derived::*)(GenericValuePart &&,
+                                         GenericValuePart &&,
+                                         GenericValuePart &&,
+                                         GenericValuePart &&,
+                                         ValuePart &&,
+                                         ValuePart &&,
+                                         ValuePart &&);
+    std::array<std::array<EncodeFnTy, 1>, 6> encode_fns = {
+        {
+         {&Derived::encode_of_add_u128},
+         {&Derived::encode_of_add_i128},
+         {&Derived::encode_of_sub_u128},
+         {&Derived::encode_of_sub_i128},
+         {&Derived::encode_of_mul_u128},
+         {&Derived::encode_of_mul_i128},
+         }
+    };
 
-  EncodeFnTy encode_fn = encode_fns[static_cast<u32>(op)][width_idx];
-  (derived()->*encode_fn)(lhs.part(0), rhs.part(0), res.part(0), res.part(1));
-  return true;
+    EncodeFnTy encode_fn = encode_fns[static_cast<u32>(op)][width_idx - 4];
+    (derived()->*encode_fn)(lhs.part(0),
+                            lhs.part(1),
+                            rhs.part(0),
+                            rhs.part(1),
+                            res.part(0),
+                            res.part(1),
+                            res.part(2));
+    return true;
+  } else {
+    using EncodeFnTy = bool (Derived::*)(
+        GenericValuePart &&, GenericValuePart &&, ValuePart &&, ValuePart &&);
+    std::array<std::array<EncodeFnTy, 4>, 6> encode_fns = {
+        {
+         {&Derived::encode_of_add_u8,
+             &Derived::encode_of_add_u16,
+             &Derived::encode_of_add_u32,
+             &Derived::encode_of_add_u64},
+         {&Derived::encode_of_add_i8,
+             &Derived::encode_of_add_i16,
+             &Derived::encode_of_add_i32,
+             &Derived::encode_of_add_i64},
+         {&Derived::encode_of_sub_u8,
+             &Derived::encode_of_sub_u16,
+             &Derived::encode_of_sub_u32,
+             &Derived::encode_of_sub_u64},
+         {&Derived::encode_of_sub_i8,
+             &Derived::encode_of_sub_i16,
+             &Derived::encode_of_sub_i32,
+             &Derived::encode_of_sub_i64},
+         {&Derived::encode_of_mul_u8,
+             &Derived::encode_of_mul_u16,
+             &Derived::encode_of_mul_u32,
+             &Derived::encode_of_mul_u64},
+         {&Derived::encode_of_mul_i8,
+             &Derived::encode_of_mul_i16,
+             &Derived::encode_of_mul_i32,
+             &Derived::encode_of_mul_i64},
+         }
+    };
+
+    EncodeFnTy encode_fn = encode_fns[static_cast<u32>(op)][width_idx];
+    (derived()->*encode_fn)(lhs.part(0), rhs.part(0), res.part(0), res.part(1));
+    return true;
+  }
 }
 
 template <typename Adaptor, typename Derived, typename Config>
