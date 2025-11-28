@@ -139,7 +139,6 @@ fn main() {
         NegOne = -1,
     }
 
-    /*
     let kind = Nums::NegOne;
     assert_eq!(-1i128, kind as i128);
 
@@ -171,7 +170,6 @@ fn main() {
 
         enum Never {}
     }
-    */
 
     #[cfg(not(target_arch = "s390x"))] // s390x doesn't have vector instructions enabled by default
     foo(I64X2([0, 0]));
