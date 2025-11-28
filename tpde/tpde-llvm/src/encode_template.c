@@ -596,154 +596,123 @@ double TARGET_V1 maxnumf64(double a, double b) { return __builtin_fmax(a, b); }
 float TARGET_V1 f64tof32(double a) { return (float)(a); }
 double TARGET_V1 f32tof64(float a) { return (double)(a); }
 
-#define typeWidth (sizeof(rep_t) * 8)
+// The float to 128-bit integer conversion code was extracted from the LLVM project's compiler-rt builtins.
 
-#define exponentBits (typeWidth - significandBits - 1)
-#define maxExponent ((1 << exponentBits) - 1)
-#define exponentBias (maxExponent >> 1)
-
-#define implicitBit (((rep_t)1) << significandBits)
-#define significandMask (implicitBit - 1U)
-#define signBit (((rep_t)1) << (significandBits + exponentBits))
-#define absMask (signBit - 1U)
-#define exponentMask (absMask ^ significandMask)
-#define oneRep ((rep_t)exponentBias << significandBits)
-#define infRep exponentMask
-#define quietBit (implicitBit >> 1)
-#define qnanRep (exponentMask | quietBit)
-
-#define significandBits 23
-#define rep_t u32
-
-u128 TARGET_V1 f32tou128(float a) {
-   // Break a into sign, exponent, significand parts.
+ u128 TARGET_V1 f32tou128(float a) {
+  // Break a into sign, exponent, significand parts.
   const union {
     float f;
-    rep_t i;
+    u32 i;
   } rep = {.f = a};
-  const rep_t aRep = rep.i;
-  const rep_t aAbs = aRep & absMask;
-  const int sign = aRep & signBit ? -1 : 1;
-  const int exponent = (aAbs >> significandBits) - exponentBias;
-  const rep_t significand = (aAbs & significandMask) | implicitBit;
+  const u32 aRep = rep.i;
+  const u32 aAbs = aRep & ((1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) - 1U);
+  const int sign = aRep & (1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) ? -1 : 1;
+  const int exponent = (aAbs >> 23) - (((1 << ((sizeof(u32) * 8
+                                                  ) - 23 - 1)) - 1) >> 1);
+  const u32 significand = (aAbs & ((1U << 23) - 1U)) | (1U << 23);
 
   // If either the value or the exponent is negative, the result is zero.
-  if (sign == -1 || exponent < 0) {
+  if (sign == -1 || exponent < 0)
     return 0;
-  }
 
   // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(u128) * 8) {
+  if ((unsigned)exponent >= sizeof(u128) * 8)
     return ~(u128)0;
-  }
 
   // If 0 <= exponent < significandBits, right shift to get the result.
   // Otherwise, shift left.
-  if (exponent < significandBits) {
-    return significand >> (significandBits - exponent);
-  } else {
-    return (u128)significand << (exponent - significandBits);
-  }
+  if (exponent < 23)
+    return significand >> (23 - exponent);
+  else
+    return (u128)significand << (exponent - 23);
 }
 
-i128 TARGET_V1 f32toi128(float a) { const i128 fixint_max = (i128)((~(u128)0) / 2);
+i128 TARGET_V1 f32toi128(float a) {
+  const i128 fixint_max = (i128)((~(u128)0) / 2);
   const i128 fixint_min = -fixint_max - 1;
   // Break a into sign, exponent, significand parts.
   const union {
     float f;
-    rep_t i;
+    u32 i;
   } rep = {.f = a};
-  const rep_t aRep = rep.i;
-  const rep_t aAbs = aRep & absMask;
-  const i128 sign = aRep & signBit ? -1 : 1;
-  const int exponent = (aAbs >> significandBits) - exponentBias;
-  const rep_t significand = (aAbs & significandMask) | implicitBit;
+  const u32 aRep = rep.i;
+  const u32 aAbs = aRep & ((1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) - 1U);
+  const i128 sign = aRep & (1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) ? -1 : 1;
+  const int exponent = (aAbs >> 23) - (((1 << ((sizeof(u32) * 8) - 23 - 1)) - 1) >> 1);
+  const u32 significand = (aAbs & ((1U << 23) - 1U)) | (1U << 23);
 
   // If exponent is negative, the result is zero.
-  if (exponent < 0) {
+  if (exponent < 0)
     return 0;
-  }
 
   // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(i128) * 8) {
+  if ((unsigned)exponent >= sizeof(i128) * 8)
     return sign == 1 ? fixint_max : fixint_min;
-  }
 
   // If 0 <= exponent < significandBits, right shift to get the result.
   // Otherwise, shift left.
-  if (exponent < significandBits) {
-    return (i128)(sign * (significand >> (significandBits - exponent)));
-  } else {
-    return (i128)(sign * ((u128)significand << (exponent - significandBits)));
-  }
+  if (exponent < 23)
+    return (i128)(sign * (significand >> (23 - exponent)));
+  else
+    return (i128)(sign * ((u128)significand << (exponent - 23)));
 }
-
-#undef significandBits
-#define significandBits 52
-#undef rep_t
-#define rep_t u64
 
 u128 TARGET_V1 f64tou128(double a) {
-    // Break a into sign, exponent, significand parts.
+  // Break a into sign, exponent, significand parts.
   const union {
     double f;
-    rep_t i;
+    u64 i;
   } rep = {.f = a};
-  const rep_t aRep = rep.i;
-  const rep_t aAbs = aRep & absMask;
-  const int sign = aRep & signBit ? -1 : 1;
-  const int exponent = (aAbs >> significandBits) - exponentBias;
-  const rep_t significand = (aAbs & significandMask) | implicitBit;
+  const u64 aRep = rep.i;
+  const u64 aAbs = aRep & ((1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) - 1U);
+  const int sign = aRep & (1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) ? -1 : 1;
+  const int exponent = (aAbs >> 52) - (((1 << ((sizeof(u64) * 8) - 52 - 1)) - 1) >> 1);
+  const u64 significand = (aAbs & ((1UL << 52) - 1U)) | (1UL << 52);
 
   // If either the value or the exponent is negative, the result is zero.
-  if (sign == -1 || exponent < 0) {
+  if (sign == -1 || exponent < 0)
     return 0;
-  }
 
   // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(u128) * 8) {
+  if ((unsigned)exponent >= sizeof(u128) * 8)
     return ~(u128)0;
-  }
 
   // If 0 <= exponent < significandBits, right shift to get the result.
   // Otherwise, shift left.
-  if (exponent < significandBits) {
-    return significand >> (significandBits - exponent);
-  } else {
-    return (u128)significand << (exponent - significandBits);
-  }
+  if (exponent < 52)
+    return significand >> (52 - exponent);
+  else
+    return (u128)significand << (exponent - 52);
 }
 
-i128 TARGET_V1 f64toi128(double a) { const i128 fixint_max = (i128)((~(u128)0) / 2);
+i128 TARGET_V1 f64toi128 (double a) {
+  const i128 fixint_max = (i128)((~(u128)0) / 2);
   const i128 fixint_min = -fixint_max - 1;
   // Break a into sign, exponent, significand parts.
   const union {
     double f;
-    rep_t i;
+    u64 i;
   } rep = {.f = a};
-  const rep_t aRep = rep.i;
-  const rep_t aAbs = aRep & absMask;
-  const i128 sign = aRep & signBit ? -1 : 1;
-  const int exponent = (aAbs >> significandBits) - exponentBias;
-  const rep_t significand = (aAbs & significandMask) | implicitBit;
+  const u64 aRep = rep.i;
+  const u64 aAbs = aRep & ((1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) - 1U);
+  const i128 sign = aRep & (1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) ? -1 : 1;
+  const int exponent = (aAbs >> 52) - (((1 << ((sizeof(u64) * 8) - 52 - 1)) - 1) >> 1);
+  const u64 significand = (aAbs & ((1UL << 52) - 1U)) | (1UL << 52);
 
   // If exponent is negative, the result is zero.
-  if (exponent < 0) {
+  if (exponent < 0)
     return 0;
-  }
 
   // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(i128) * 8) {
+  if ((unsigned)exponent >= sizeof(i128) * 8)
     return sign == 1 ? fixint_max : fixint_min;
-  }
 
   // If 0 <= exponent < significandBits, right shift to get the result.
   // Otherwise, shift left.
-  if (exponent < significandBits) {
-    return (i128)(sign * (significand >> (significandBits - exponent)));
-  } else {
-    return (i128)(sign * ((u128)significand << (exponent - significandBits)));
-  }
+  if (exponent < 52)
+    return (i128)(sign * (significand >> (52 - exponent)));
+  else
+    return (i128)(sign * ((u128)significand << (exponent - 52)));
 }
 
 i8 TARGET_V1 f32toi8(float a) { return (i8)a; }

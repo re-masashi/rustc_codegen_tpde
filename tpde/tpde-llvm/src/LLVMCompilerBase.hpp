@@ -2544,11 +2544,7 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_float_to_int(
       FLOAT_ENCODE(64, 128, 0);
       return fns;
     }();
-    EncodeFnTy fn = fns[ty_idx][width_idx][sign][saturate];
-
-    if (saturate && bit_width != 128) {
-      return false;
-    }
+    EncodeFnTy fn = fns[ty_idx][width_idx - 4][sign][saturate];
 
     auto src_ref = this->val_ref(src_val);
     auto res_ref = this->result_ref(inst);
