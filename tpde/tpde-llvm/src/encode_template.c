@@ -60,6 +60,8 @@ typedef float v2f32 __attribute__((vector_size(8)));
 
 typedef i8 v16i8 __attribute__((vector_size(16)));
 typedef u8 v16u8 __attribute__((vector_size(16)));
+typedef i8 v32i8 __attribute__((vector_size(32)));
+typedef u8 v32u8 __attribute__((vector_size(32)));
 typedef i16 v8i16 __attribute__((vector_size(16)));
 typedef u16 v8u16 __attribute__((vector_size(16)));
 typedef i32 v4i32 __attribute__((vector_size(16)));
@@ -1044,9 +1046,19 @@ FOPS(double)
 // --------------------------
 // x86-64 intrinsics
 // --------------------------
-#ifdef __x86_64__
-v16i8 llvm_pshufb_128(v16i8, v16i8) __asm__("llvm.x86.ssse3.pshuf.b.128");
-v16i8 pshufb_128(v16i8 a, v16i8 b) { return llvm_pshufb_128(a, b) ;}
+#ifdef __SSSE3__
+v16i8 llvm_ssse3_pshufb_128(v16i8, v16i8) __asm__("llvm.x86.ssse3.pshuf.b.128");
+v16i8 ssse3_pshufb_128(v16i8 a, v16i8 b) { return llvm_ssse3_pshufb_128(a, b);}
+#endif
+#ifdef __AVX2__
+v32i8 llvm_avx2_pshufb(v32i8, v32i8) __asm__("llvm.x86.avx2.pshuf.b");
+v32i8 avx2_pshufb(v32i8 a, v32i8 b) { return llvm_avx2_pshufb(a, b);}
+#endif
+#ifdef __AVX__
+void llvm_avx_vzeroupper(void) __asm__("llvm.x86.avx.vzeroupper");
+void avx_vzeroupper(void) { llvm_avx_vzeroupper();}
+void llvm_avx_vzeroall(void) __asm__("llvm.x86.avx.vzeroall");
+void avx_vzeroall(void) { llvm_avx_vzeroall();}
 #endif
 
 // --------------------------

@@ -606,9 +606,24 @@ bool LLVMCompilerX64::handle_intrin(const llvm::IntrinsicInst *inst) noexcept {
   }
   case llvm::Intrinsic::x86_sse2_pause: ASM(PAUSE); return true;
   case llvm::Intrinsic::x86_ssse3_pshuf_b_128: {
-    derived()->encode_pshufb_128(this->val_ref(inst->getOperand(0)).part(0),
-                                 this->val_ref(inst->getOperand(1)).part(0),
-                                 this->result_ref(inst).part(0));
+    derived()->encode_ssse3_pshufb_128(
+        this->val_ref(inst->getOperand(0)).part(0),
+        this->val_ref(inst->getOperand(1)).part(0),
+        this->result_ref(inst).part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_avx2_pshuf_b: {
+    derived()->encode_avx2_pshufb(this->val_ref(inst->getOperand(0)).part(0),
+                                  this->val_ref(inst->getOperand(1)).part(0),
+                                  this->result_ref(inst).part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_avx_vzeroupper: {
+    derived()->encode_avx_vzeroupper();
+    return true;
+  }
+  case llvm::Intrinsic::x86_avx_vzeroall: {
+    derived()->encode_avx_vzeroall();
     return true;
   }
   default: return false;

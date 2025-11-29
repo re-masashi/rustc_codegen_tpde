@@ -772,6 +772,7 @@ void EncodingTargetX64::get_inst_candidates(
   handle_rm("PUNPCKHQDQrr", "PUNPCKHQDQrm", 2, "SSE_PUNPCKHQDQrr", "SSE_PUNPCKHQDQrm", 16);
 
   handle_rm("VPSHUFBrr", "VPSHUFBrm", 2, "VPSHUFB128rrr", "VPSHUFB128rrm");
+  handle_rm("VPSHUFBYrr", "VPSHUFBYrm", 2, "VPSHUFB256rrr", "VPSHUFB256rrm");
 
   case_default("PMOVMSKBrr", -1, "SSE_PMOVMSKBrr");
   case_default("MOVMSKPSrr", -1, "SSE_MOVMSKPSrr");
@@ -782,6 +783,11 @@ void EncodingTargetX64::get_inst_candidates(
 
   if (Name == "LCMPXCHG64") {
     handle_default("LOCK_CMPXCHG64mr", 0);
+
+  } else if (Name == "VZEROALL") {
+    handle_default("VZEROALL");
+  } else if (Name == "VZEROUPPER") {
+    handle_default("VZEROUPPER");
 
   } else if (Name == "VMOVAPSYrm") {
     handle_default("VMOVAPS256rm", 1);
