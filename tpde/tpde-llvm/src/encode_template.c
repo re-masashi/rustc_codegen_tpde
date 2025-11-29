@@ -537,16 +537,22 @@ v2f32 TARGET_V1 addv2f32(v2f32 a, v2f32 b) { return (a + b); }
 v2f32 TARGET_V1 subv2f32(v2f32 a, v2f32 b) { return (a - b); }
 v2f32 TARGET_V1 mulv2f32(v2f32 a, v2f32 b) { return (a * b); }
 v2f32 TARGET_V1 divv2f32(v2f32 a, v2f32 b) { return (a / b); }
+v2f32 TARGET_V1 llvm_sqrt_v2f32(v2f32) __asm__("llvm.sqrt.v2f32");
+v2f32 TARGET_V1 sqrtv2f32(v2f32 a) { return llvm_sqrt_v2f32(a); };
 
 v4f32 TARGET_V1 addv4f32(v4f32 a, v4f32 b) { return (a + b); }
 v4f32 TARGET_V1 subv4f32(v4f32 a, v4f32 b) { return (a - b); }
 v4f32 TARGET_V1 mulv4f32(v4f32 a, v4f32 b) { return (a * b); }
 v4f32 TARGET_V1 divv4f32(v4f32 a, v4f32 b) { return (a / b); }
+v4f32 TARGET_V1 llvm_sqrt_v4f32(v4f32) __asm__("llvm.sqrt.v4f32");
+v4f32 TARGET_V1 sqrtv4f32(v4f32 a) { return llvm_sqrt_v4f32(a); };
 
 v2f64 TARGET_V1 addv2f64(v2f64 a, v2f64 b) { return (a + b); }
 v2f64 TARGET_V1 subv2f64(v2f64 a, v2f64 b) { return (a - b); }
 v2f64 TARGET_V1 mulv2f64(v2f64 a, v2f64 b) { return (a * b); }
 v2f64 TARGET_V1 divv2f64(v2f64 a, v2f64 b) { return (a / b); }
+v2f64 TARGET_V1 llvm_sqrt_v2f64(v2f64) __asm__("llvm.sqrt.v2f64");
+v2f64 TARGET_V1 sqrtv2f64(v2f64 a) { return llvm_sqrt_v2f64(a); };
 
 float TARGET_V1 fnegf32(float a) { return (-a); }
 double TARGET_V1 fnegf64(double a) { return (-a); }

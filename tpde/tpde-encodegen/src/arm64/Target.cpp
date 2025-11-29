@@ -663,6 +663,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("FMLAv2f32", "FMLA2s");
   case_default("FMLAv4f32", "FMLA4s");
   case_default("FMLAv2f64", "FMLA2d");
+  case_default("FSQRTv2f32", "FSQRT2s");
+  case_default("FSQRTv4f32", "FSQRT4s");
+  case_default("FSQRTv2f64", "FSQRT2d");
   case_default("CMLTv8i8rz", "CMLT8b_zero");
   case_default("CMLTv16i8rz", "CMLT16b_zero");
   case_default("CMLTv4i16rz", "CMLT4h_zero");

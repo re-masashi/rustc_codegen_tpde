@@ -4744,6 +4744,24 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
       derived()->encode_sqrtf64(this->val_ref(val).part(0), res_ref);
     } else if (ty->isFloatTy()) {
       derived()->encode_sqrtf32(this->val_ref(val).part(0), res_ref);
+    } else if (ty->isVectorTy()) {
+      switch (info.type) {
+      case LLVMBasicValType::v2f32: {
+        derived()->encode_sqrtv2f32(this->val_ref(val).part(0), res_ref);
+        break;
+      }
+      case LLVMBasicValType::v4f32: {
+        derived()->encode_sqrtv2f64(this->val_ref(val).part(0), res_ref);
+        break;
+      }
+      case LLVMBasicValType::v2f64: {
+        derived()->encode_sqrtv2f64(this->val_ref(val).part(0), res_ref);
+        break;
+      }
+      default: {
+        return false;
+      }
+      }
     } else {
       return false;
     }
@@ -4938,8 +4956,8 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
       return false;
     }
     const auto width = inst->getType()->getIntegerBitWidth();
-    // Implementing non-powers-of-two is difficult, would require modulo of
-    // shift amount. Doesn't really occur in practice.
+    // Implementing non-powers-of-two is difficult, would require modulo
+    // of shift amount. Doesn't really occur in practice.
     if (width != 8 && width != 16 && width != 32 && width != 64) {
       return false;
     }
@@ -5266,8 +5284,8 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_is_fpclass(
   TEST(IS_NORM, norm)
 #undef TEST
 
-  // we OR' together the results from each test so initialize the result with
-  // zero
+  // we OR' together the results from each test so initialize the result
+  // with zero
   ValuePartRef res_scratch{derived(), Config::GP_BANK};
   zero_ref.reload_into_specific_fixed(res_scratch.alloc_reg());
 
@@ -5289,8 +5307,9 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_is_fpclass(
   for (unsigned i = 0; i < encode_fns.size(); i++) {
     if (test & (1 << i)) {
       // note that the std::move(res_scratch) here creates a new ValuePart
-      // that manages the register inside the GenericValuePart and res_scratch
-      // becomes invalid by the time the encode function is entered
+      // that manages the register inside the GenericValuePart and
+      // res_scratch becomes invalid by the time the encode function is
+      // entered
       (derived()->*encode_fns[i][is_double])(
           std::move(res_scratch), op_ref.get_unowned_ref(), res_scratch);
     }
