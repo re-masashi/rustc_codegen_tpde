@@ -771,6 +771,8 @@ void EncodingTargetX64::get_inst_candidates(
   handle_rm("PUNPCKHDQrr", "PUNPCKHDQrm", 2, "SSE_PUNPCKHDQrr", "SSE_PUNPCKHDQrm", 16);
   handle_rm("PUNPCKHQDQrr", "PUNPCKHQDQrm", 2, "SSE_PUNPCKHQDQrr", "SSE_PUNPCKHQDQrm", 16);
 
+  handle_rm("VPSHUFBrr", "VPSHUFBrm", 2, "VPSHUFB128rrr", "VPSHUFB128rrm");
+
   case_default("PMOVMSKBrr", -1, "SSE_PMOVMSKBrr");
   case_default("MOVMSKPSrr", -1, "SSE_MOVMSKPSrr");
   case_default("MOVMSKPDrr", -1, "SSE_MOVMSKPDrr");

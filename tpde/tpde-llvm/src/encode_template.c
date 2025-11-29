@@ -1042,6 +1042,14 @@ FOPS(double)
 #undef FOP
 
 // --------------------------
+// x86-64 intrinsics
+// --------------------------
+#ifdef __x86_64__
+v16i8 llvm_pshufb_128(v16i8, v16i8) __asm__("llvm.x86.ssse3.pshuf.b.128");
+v16i8 pshufb_128(v16i8 a, v16i8 b) { return llvm_pshufb_128(a, b) ;}
+#endif
+
+// --------------------------
 // miscellaneous
 // --------------------------
 
