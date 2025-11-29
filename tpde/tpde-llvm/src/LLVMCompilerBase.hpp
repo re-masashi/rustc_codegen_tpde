@@ -4885,7 +4885,7 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
   case llvm::Intrinsic::ucmp:
   case llvm::Intrinsic::scmp:
     if (!inst->getType()->isIntegerTy() ||
-        inst->getType()->getIntegerBitWidth() > 64) {
+        inst->getType()->getIntegerBitWidth() > 128) {
       return false;
     }
     [[fallthrough]];
@@ -4898,7 +4898,7 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
       return false;
     }
     const auto width = ty->getIntegerBitWidth();
-    if (width > 64) {
+    if (width > 128) {
       return false;
     }
 
@@ -4908,40 +4908,67 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
 
     ValueRef lhs_ref = this->val_ref(inst->getOperand(0));
     ValueRef rhs_ref = this->val_ref(inst->getOperand(1));
-    ValuePartRef lhs = lhs_ref.part(0);
-    ValuePartRef rhs = rhs_ref.part(0);
-    if (width != 32 && width != 64) {
-      unsigned dst_width = tpde::util::align_up(width, 32);
-      lhs = std::move(lhs).into_extended(sign, width, dst_width);
-      rhs = std::move(rhs).into_extended(sign, width, dst_width);
-    }
 
     ValueRef res = this->result_ref(inst);
-    using EncodeFnTy = bool (Derived::*)(
-        GenericValuePart &&, GenericValuePart &&, ValuePart &&);
-    EncodeFnTy encode_fn = nullptr;
-    if (width <= 32) {
+    if (width == 128) {
+      using EncodeFnTy = bool (Derived::*)(GenericValuePart &&,
+                                           GenericValuePart &&,
+                                           GenericValuePart &&,
+                                           GenericValuePart &&,
+                                           ValuePart &&,
+                                           ValuePart &&);
+      EncodeFnTy encode_fn = nullptr;
       switch (intrin_id) {
-      case llvm::Intrinsic::ucmp: encode_fn = &Derived::encode_ucmpi32; break;
-      case llvm::Intrinsic::umin: encode_fn = &Derived::encode_umini32; break;
-      case llvm::Intrinsic::umax: encode_fn = &Derived::encode_umaxi32; break;
-      case llvm::Intrinsic::scmp: encode_fn = &Derived::encode_scmpi32; break;
-      case llvm::Intrinsic::smin: encode_fn = &Derived::encode_smini32; break;
-      case llvm::Intrinsic::smax: encode_fn = &Derived::encode_smaxi32; break;
+      case llvm::Intrinsic::ucmp: encode_fn = &Derived::encode_ucmpi128; break;
+      case llvm::Intrinsic::umin: encode_fn = &Derived::encode_umini128; break;
+      case llvm::Intrinsic::umax: encode_fn = &Derived::encode_umaxi128; break;
+      case llvm::Intrinsic::scmp: encode_fn = &Derived::encode_scmpi128; break;
+      case llvm::Intrinsic::smin: encode_fn = &Derived::encode_smini128; break;
+      case llvm::Intrinsic::smax: encode_fn = &Derived::encode_smaxi128; break;
       default: TPDE_UNREACHABLE("invalid intrinsic");
       }
+      return (derived()->*encode_fn)(lhs_ref.part(0),
+                                     lhs_ref.part(1),
+                                     rhs_ref.part(0),
+                                     rhs_ref.part(1),
+                                     res.part(0),
+                                     res.part(1));
     } else {
-      switch (intrin_id) {
-      case llvm::Intrinsic::ucmp: encode_fn = &Derived::encode_ucmpi64; break;
-      case llvm::Intrinsic::umin: encode_fn = &Derived::encode_umini64; break;
-      case llvm::Intrinsic::umax: encode_fn = &Derived::encode_umaxi64; break;
-      case llvm::Intrinsic::scmp: encode_fn = &Derived::encode_scmpi64; break;
-      case llvm::Intrinsic::smin: encode_fn = &Derived::encode_smini64; break;
-      case llvm::Intrinsic::smax: encode_fn = &Derived::encode_smaxi64; break;
-      default: TPDE_UNREACHABLE("invalid intrinsic");
+      ValuePartRef lhs = lhs_ref.part(0);
+      ValuePartRef rhs = rhs_ref.part(0);
+      if (width != 32 && width != 64) {
+        unsigned dst_width = tpde::util::align_up(width, 32);
+        lhs = std::move(lhs).into_extended(sign, width, dst_width);
+        rhs = std::move(rhs).into_extended(sign, width, dst_width);
       }
+
+      using EncodeFnTy = bool (Derived::*)(
+          GenericValuePart &&, GenericValuePart &&, ValuePart &&);
+      EncodeFnTy encode_fn = nullptr;
+      if (width <= 32) {
+        switch (intrin_id) {
+        case llvm::Intrinsic::ucmp: encode_fn = &Derived::encode_ucmpi32; break;
+        case llvm::Intrinsic::umin: encode_fn = &Derived::encode_umini32; break;
+        case llvm::Intrinsic::umax: encode_fn = &Derived::encode_umaxi32; break;
+        case llvm::Intrinsic::scmp: encode_fn = &Derived::encode_scmpi32; break;
+        case llvm::Intrinsic::smin: encode_fn = &Derived::encode_smini32; break;
+        case llvm::Intrinsic::smax: encode_fn = &Derived::encode_smaxi32; break;
+        default: TPDE_UNREACHABLE("invalid intrinsic");
+        }
+      } else {
+        switch (intrin_id) {
+        case llvm::Intrinsic::ucmp: encode_fn = &Derived::encode_ucmpi64; break;
+        case llvm::Intrinsic::umin: encode_fn = &Derived::encode_umini64; break;
+        case llvm::Intrinsic::umax: encode_fn = &Derived::encode_umaxi64; break;
+        case llvm::Intrinsic::scmp: encode_fn = &Derived::encode_scmpi64; break;
+        case llvm::Intrinsic::smin: encode_fn = &Derived::encode_smini64; break;
+        case llvm::Intrinsic::smax: encode_fn = &Derived::encode_smaxi64; break;
+        default: TPDE_UNREACHABLE("invalid intrinsic");
+        }
+      }
+      return (derived()->*encode_fn)(
+          std::move(lhs), std::move(rhs), res.part(0));
     }
-    return (derived()->*encode_fn)(std::move(lhs), std::move(rhs), res.part(0));
   }
   case llvm::Intrinsic::ptrmask: {
     // ptrmask is just an integer and.
