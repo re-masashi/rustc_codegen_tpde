@@ -5178,10 +5178,10 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
       };
 
       EncodeFnTy fn = encode_fns[width_idx - 4][is_cttz][zero_is_poison];
-      return (derived()->*fn)(this->val_ref(val).part(0),
-                              this->val_ref(val).part(1),
-                              this->result_ref(inst).part(0),
-                              this->result_ref(inst).part(1));
+      ValueRef input_ref = this->val_ref(val);
+      ValueRef result = this->result_ref(inst);
+      return (derived()->*fn)(
+          input_ref.part(0), input_ref.part(1), result.part(0), result.part(1));
     } else {
       using EncodeFnTy = bool (Derived::*)(GenericValuePart &&, ValuePart &&);
       // [width_idx][is_cttz][zero_is_poison]
