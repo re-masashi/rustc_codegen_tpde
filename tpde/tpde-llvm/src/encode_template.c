@@ -601,125 +601,6 @@ double TARGET_V1 maxnumf64(double a, double b) { return __builtin_fmax(a, b); }
 float TARGET_V1 f64tof32(double a) { return (float)(a); }
 double TARGET_V1 f32tof64(float a) { return (double)(a); }
 
-// The float to 128-bit integer conversion code was extracted from the LLVM project's compiler-rt builtins.
-
- u128 TARGET_V1 f32tou128(float a) {
-  // Break a into sign, exponent, significand parts.
-  const union {
-    float f;
-    u32 i;
-  } rep = {.f = a};
-  const u32 aRep = rep.i;
-  const u32 aAbs = aRep & ((1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) - 1U);
-  const int sign = aRep & (1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) ? -1 : 1;
-  const int exponent = (aAbs >> 23) - (((1 << ((sizeof(u32) * 8
-                                                  ) - 23 - 1)) - 1) >> 1);
-  const u32 significand = (aAbs & ((1U << 23) - 1U)) | (1U << 23);
-
-  // If either the value or the exponent is negative, the result is zero.
-  if (sign == -1 || exponent < 0)
-    return 0;
-
-  // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(u128) * 8)
-    return ~(u128)0;
-
-  // If 0 <= exponent < significandBits, right shift to get the result.
-  // Otherwise, shift left.
-  if (exponent < 23)
-    return significand >> (23 - exponent);
-  else
-    return (u128)significand << (exponent - 23);
-}
-
-i128 TARGET_V1 f32toi128(float a) {
-  const i128 fixint_max = (i128)((~(u128)0) / 2);
-  const i128 fixint_min = -fixint_max - 1;
-  // Break a into sign, exponent, significand parts.
-  const union {
-    float f;
-    u32 i;
-  } rep = {.f = a};
-  const u32 aRep = rep.i;
-  const u32 aAbs = aRep & ((1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) - 1U);
-  const i128 sign = aRep & (1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) ? -1 : 1;
-  const int exponent = (aAbs >> 23) - (((1 << ((sizeof(u32) * 8) - 23 - 1)) - 1) >> 1);
-  const u32 significand = (aAbs & ((1U << 23) - 1U)) | (1U << 23);
-
-  // If exponent is negative, the result is zero.
-  if (exponent < 0)
-    return 0;
-
-  // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(i128) * 8)
-    return sign == 1 ? fixint_max : fixint_min;
-
-  // If 0 <= exponent < significandBits, right shift to get the result.
-  // Otherwise, shift left.
-  if (exponent < 23)
-    return (i128)(sign * (significand >> (23 - exponent)));
-  else
-    return (i128)(sign * ((u128)significand << (exponent - 23)));
-}
-
-u128 TARGET_V1 f64tou128(double a) {
-  // Break a into sign, exponent, significand parts.
-  const union {
-    double f;
-    u64 i;
-  } rep = {.f = a};
-  const u64 aRep = rep.i;
-  const u64 aAbs = aRep & ((1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) - 1U);
-  const int sign = aRep & (1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) ? -1 : 1;
-  const int exponent = (aAbs >> 52) - (((1 << ((sizeof(u64) * 8) - 52 - 1)) - 1) >> 1);
-  const u64 significand = (aAbs & ((1UL << 52) - 1U)) | (1UL << 52);
-
-  // If either the value or the exponent is negative, the result is zero.
-  if (sign == -1 || exponent < 0)
-    return 0;
-
-  // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(u128) * 8)
-    return ~(u128)0;
-
-  // If 0 <= exponent < significandBits, right shift to get the result.
-  // Otherwise, shift left.
-  if (exponent < 52)
-    return significand >> (52 - exponent);
-  else
-    return (u128)significand << (exponent - 52);
-}
-
-i128 TARGET_V1 f64toi128 (double a) {
-  const i128 fixint_max = (i128)((~(u128)0) / 2);
-  const i128 fixint_min = -fixint_max - 1;
-  // Break a into sign, exponent, significand parts.
-  const union {
-    double f;
-    u64 i;
-  } rep = {.f = a};
-  const u64 aRep = rep.i;
-  const u64 aAbs = aRep & ((1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) - 1U);
-  const i128 sign = aRep & (1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) ? -1 : 1;
-  const int exponent = (aAbs >> 52) - (((1 << ((sizeof(u64) * 8) - 52 - 1)) - 1) >> 1);
-  const u64 significand = (aAbs & ((1UL << 52) - 1U)) | (1UL << 52);
-
-  // If exponent is negative, the result is zero.
-  if (exponent < 0)
-    return 0;
-
-  // If the value is too large for the integer type, saturate.
-  if ((unsigned)exponent >= sizeof(i128) * 8)
-    return sign == 1 ? fixint_max : fixint_min;
-
-  // If 0 <= exponent < significandBits, right shift to get the result.
-  // Otherwise, shift left.
-  if (exponent < 52)
-    return (i128)(sign * (significand >> (52 - exponent)));
-  else
-    return (i128)(sign * ((u128)significand << (exponent - 52)));
-}
-
 i8 TARGET_V1 f32toi8(float a) { return (i8)a; }
 u8 TARGET_V1 f32tou8(float a) { return (u8)a; }
 i16 TARGET_V1 f32toi16(float a) { return (i16)a; }
@@ -772,61 +653,6 @@ i64 TARGET_V1 f64toi64_sat(double a) { return llvm_fptosi_sat_i64_double(a); }
 u64 TARGET_V1 llvm_fptoui_sat_i64_double(double) __asm__("llvm.fptoui.sat.i64.f64");
 u64 TARGET_V1 f64tou64_sat(double a) { return llvm_fptoui_sat_i64_double(a); }
 
-const float TWO_POW_127_F32 = 170141183460469231731687303715884105728.0f;
-i128 TARGET_V1 f32toi128_sat(float a) {
-    if(__builtin_isnan(a)) {
-        return 0;
-    }
-    if(a >= TWO_POW_127_F32) {
-        return INT128_MAX;
-    }
-    if(a < -TWO_POW_127_F32) {
-        return INT128_MIN;
-    }
-    return f32toi128(a);
-}
-u128 TARGET_V1 f32tou128_sat(float a) { 
-    if(__builtin_isnan(a)) {
-        return 0;
-    }
-    if(a <= 0.0f) {
-        return 0;
-    }
-    if(__builtin_isinf_sign(a)) { // Values other than infinity will fit inside the range of a u128
-        return UINT128_MAX;
-    }
-
-    return f32tou128(a);
-}
-
-const double TWO_POW_127_F64 = 170141183460469231731687303715884105728.0;
-const double TWO_POW_128_F64 = 340282366920938463463374607431768211456.0;
-i128 TARGET_V1 f64toi128_sat(double a) {
-    if(__builtin_isnan(a)) {
-        return 0;
-    }
-    if(a >= TWO_POW_127_F64) {
-        return INT128_MAX;
-    }
-    if(a < -TWO_POW_127_F64) {
-        return INT128_MIN;
-    }
-    return f64toi128(a);
-}
-u128 TARGET_V1 f64tou128_sat(double a) { 
-    if(__builtin_isnan(a)) {
-        return 0;
-    }
-    if(a <= 0.0) {
-        return 0;
-    }
-    if(a >= TWO_POW_128_F64) {
-        return UINT128_MAX;
-    }
-
-    return f32toi128(a);
-}
-
 float TARGET_V1 i8tof32(u8 a) { return (float)(i8)a; }
 float TARGET_V1 i16tof32(u16 a) { return (float)(i16)a; }
 float TARGET_V1 i32tof32(u32 a) { return (float)(i32)a; }
@@ -844,6 +670,204 @@ double TARGET_V1 u8tof64(i8 a) { return (double)(u8)a; }
 double TARGET_V1 u16tof64(i16 a) { return (double)(u16)a; }
 double TARGET_V1 u32tof64(i32 a) { return (double)(u32)a; }
 double TARGET_V1 u64tof64(i64 a) { return (double)(u64)a; }
+
+// clang-format on
+
+// The float -> 128-bit integer conversion code was extracted from the LLVM
+// project's compiler-rt builtins.
+
+// TODO (mj): use LibFuncs directly instead of copying their source
+
+u128 TARGET_V1 f32tou128(float a) {
+  // Break a into sign, exponent, significand parts.
+  const union {
+    float f;
+    u32 i;
+  } rep = {.f = a};
+  const u32 aRep = rep.i;
+  const u32 aAbs = aRep & ((1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) - 1U);
+  const int sign = aRep & (1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) ? -1 : 1;
+  const int exponent =
+      (aAbs >> 23) - (((1 << ((sizeof(u32) * 8) - 23 - 1)) - 1) >> 1);
+  const u32 significand = (aAbs & ((1U << 23) - 1U)) | (1U << 23);
+
+  // If either the value or the exponent is negative, the result is zero.
+  if (sign == -1 || exponent < 0) {
+    return 0;
+  }
+
+  // If the value is too large for the integer type, saturate.
+  if ((unsigned)exponent >= sizeof(u128) * 8) {
+    return ~(u128)0;
+  }
+
+  // If 0 <= exponent < significandBits, right shift to get the result.
+  // Otherwise, shift left.
+  if (exponent < 23) {
+    return significand >> (23 - exponent);
+  } else {
+    return (u128)significand << (exponent - 23);
+  }
+}
+
+i128 TARGET_V1 f32toi128(float a) {
+  const i128 fixint_max = (i128)((~(u128)0) / 2);
+  const i128 fixint_min = -fixint_max - 1;
+  // Break a into sign, exponent, significand parts.
+  const union {
+    float f;
+    u32 i;
+  } rep = {.f = a};
+  const u32 aRep = rep.i;
+  const u32 aAbs = aRep & ((1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) - 1U);
+  const i128 sign = aRep & (1U << (23 + ((sizeof(u32) * 8) - 23 - 1))) ? -1 : 1;
+  const int exponent =
+      (aAbs >> 23) - (((1 << ((sizeof(u32) * 8) - 23 - 1)) - 1) >> 1);
+  const u32 significand = (aAbs & ((1U << 23) - 1U)) | (1U << 23);
+
+  // If exponent is negative, the result is zero.
+  if (exponent < 0) {
+    return 0;
+  }
+
+  // If the value is too large for the integer type, saturate.
+  if ((unsigned)exponent >= sizeof(i128) * 8) {
+    return sign == 1 ? fixint_max : fixint_min;
+  }
+
+  // If 0 <= exponent < significandBits, right shift to get the result.
+  // Otherwise, shift left.
+  if (exponent < 23) {
+    return (i128)(sign * (significand >> (23 - exponent)));
+  } else {
+    return (i128)(sign * ((u128)significand << (exponent - 23)));
+  }
+}
+
+u128 TARGET_V1 f64tou128(double a) {
+  // Break a into sign, exponent, significand parts.
+  const union {
+    double f;
+    u64 i;
+  } rep = {.f = a};
+  const u64 aRep = rep.i;
+  const u64 aAbs = aRep & ((1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) - 1U);
+  const int sign = aRep & (1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) ? -1 : 1;
+  const int exponent =
+      (aAbs >> 52) - (((1 << ((sizeof(u64) * 8) - 52 - 1)) - 1) >> 1);
+  const u64 significand = (aAbs & ((1UL << 52) - 1U)) | (1UL << 52);
+
+  // If either the value or the exponent is negative, the result is zero.
+  if (sign == -1 || exponent < 0) {
+    return 0;
+  }
+
+  // If the value is too large for the integer type, saturate.
+  if ((unsigned)exponent >= sizeof(u128) * 8) {
+    return ~(u128)0;
+  }
+
+  // If 0 <= exponent < significandBits, right shift to get the result.
+  // Otherwise, shift left.
+  if (exponent < 52) {
+    return significand >> (52 - exponent);
+  } else {
+    return (u128)significand << (exponent - 52);
+  }
+}
+
+i128 TARGET_V1 f64toi128(double a) {
+  const i128 fixint_max = (i128)((~(u128)0) / 2);
+  const i128 fixint_min = -fixint_max - 1;
+  // Break a into sign, exponent, significand parts.
+  const union {
+    double f;
+    u64 i;
+  } rep = {.f = a};
+  const u64 aRep = rep.i;
+  const u64 aAbs = aRep & ((1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) - 1U);
+  const i128 sign =
+      aRep & (1UL << (52 + ((sizeof(u64) * 8) - 52 - 1))) ? -1 : 1;
+  const int exponent =
+      (aAbs >> 52) - (((1 << ((sizeof(u64) * 8) - 52 - 1)) - 1) >> 1);
+  const u64 significand = (aAbs & ((1UL << 52) - 1U)) | (1UL << 52);
+
+  // If exponent is negative, the result is zero.
+  if (exponent < 0) {
+    return 0;
+  }
+
+  // If the value is too large for the integer type, saturate.
+  if ((unsigned)exponent >= sizeof(i128) * 8) {
+    return sign == 1 ? fixint_max : fixint_min;
+  }
+
+  // If 0 <= exponent < significandBits, right shift to get the result.
+  // Otherwise, shift left.
+  if (exponent < 52) {
+    return (i128)(sign * (significand >> (52 - exponent)));
+  } else {
+    return (i128)(sign * ((u128)significand << (exponent - 52)));
+  }
+}
+
+const float TWO_POW_127_F32 = 170141183460469231731687303715884105728.0f;
+i128 TARGET_V1 f32toi128_sat(float a) {
+  if (__builtin_isnan(a)) {
+    return 0;
+  }
+  if (a >= TWO_POW_127_F32) {
+    return INT128_MAX;
+  }
+  if (a < -TWO_POW_127_F32) {
+    return INT128_MIN;
+  }
+  return f32toi128(a);
+}
+u128 TARGET_V1 f32tou128_sat(float a) {
+  if (__builtin_isnan(a)) {
+    return 0;
+  }
+  if (a <= 0.0f) {
+    return 0;
+  }
+  if (__builtin_isinf_sign(a)) { // Values other than infinity will fit inside
+                                 // the range of a u128
+    return UINT128_MAX;
+  }
+
+  return f32tou128(a);
+}
+
+const double TWO_POW_127_F64 = 170141183460469231731687303715884105728.0;
+const double TWO_POW_128_F64 = 340282366920938463463374607431768211456.0;
+i128 TARGET_V1 f64toi128_sat(double a) {
+  if (__builtin_isnan(a)) {
+    return 0;
+  }
+  if (a >= TWO_POW_127_F64) {
+    return INT128_MAX;
+  }
+  if (a < -TWO_POW_127_F64) {
+    return INT128_MIN;
+  }
+  return f64toi128(a);
+}
+u128 TARGET_V1 f64tou128_sat(double a) {
+  if (__builtin_isnan(a)) {
+    return 0;
+  }
+  if (a <= 0.0) {
+    return 0;
+  }
+  if (a >= TWO_POW_128_F64) {
+    return UINT128_MAX;
+  }
+
+  return f32toi128(a);
+}
+
+// clang-format off
 
 // --------------------------
 // extensions

@@ -224,6 +224,12 @@ struct LLVMCompilerBase : public LLVMCompiler,
     floatditf,
     floatunditf,
     floatunsitf,
+    floattisf,
+    floatuntisf,
+    floattidf,
+    floatuntidf,
+    floattitf,
+    floatuntitf,
     fixtfdi,
     fixunstfdi,
     addtf3,
@@ -1281,6 +1287,12 @@ typename LLVMCompilerBase<Adaptor, Derived, Config>::SymRef
   case LibFunc::floatditf: name = "__floatditf"; break;
   case LibFunc::floatunsitf: name = "__floatunsitf"; break;
   case LibFunc::floatunditf: name = "__floatunditf"; break;
+  case LibFunc::floattisf: name = "__floattisf"; break;
+  case LibFunc::floatuntisf: name = "__floatuntisf"; break;
+  case LibFunc::floattidf: name = "__floattidf"; break;
+  case LibFunc::floatuntidf: name = "__floatuntidf"; break;
+  case LibFunc::floattitf: name = "__floattitf"; break;
+  case LibFunc::floatuntitf: name = "__floatuntitf";
   case LibFunc::fixtfdi: name = "__fixtfdi"; break;
   case LibFunc::fixunstfdi: name = "__fixunstfdi"; break;
   case LibFunc::addtf3: name = "__addtf3"; break;
@@ -2588,8 +2600,33 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_to_float(
   }
 
   auto bit_width = src_val->getType()->getIntegerBitWidth();
-  if (bit_width > 64) {
-    return false;
+  u32 width_idx = 0;
+  switch (bit_width) {
+  case 8: width_idx = 0; break;
+  case 16: width_idx = 1; break;
+  case 32: width_idx = 2; break;
+  case 64: width_idx = 3; break;
+  case 128: width_idx = 4; break;
+  default: return false;
+  }
+
+  if (width_idx == 4) {
+    LibFunc lf;
+    if (dst_ty->isFloatTy()) {
+      lf = sign ? LibFunc::floattisf : LibFunc::floatuntisf;
+    } else if (dst_ty->isDoubleTy()) {
+      lf = sign ? LibFunc::floattidf : LibFunc::floatuntidf;
+    } else if (dst_ty->isFP128Ty()) {
+      lf = sign ? LibFunc::floattitf : LibFunc::floatuntitf;
+    } else {
+      return false;
+    }
+
+    SymRef sym = get_libfunc_sym(lf);
+
+    auto res_vr = this->result_ref(inst);
+    derived()->create_helper_call({&src_val, 1}, &res_vr, sym);
+    return true;
   }
 
   if (dst_ty->isFP128Ty()) {
