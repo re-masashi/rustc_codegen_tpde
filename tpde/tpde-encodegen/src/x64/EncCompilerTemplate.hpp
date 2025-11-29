@@ -244,6 +244,7 @@ void EncodeCompiler<Adaptor, Derived, BaseTy, Config>::
     if (dst_scratch.cur_reg() != reg) {
         derived()->mov(dst_scratch.cur_reg(), reg, size);
     }
+    assert(bank == derived()->register_file.reg_bank(dst_scratch.cur_reg()).id());
 }
 
 template <typename Adaptor,

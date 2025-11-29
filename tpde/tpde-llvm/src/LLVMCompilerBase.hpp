@@ -5522,20 +5522,51 @@ template <typename Adaptor, typename Derived, typename Config>
 bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_vector_reduce(
     const llvm::IntrinsicInst *inst, const ValInfo &info) noexcept {
   if (inst->getType()->isIntegerTy(1)) {
+    using EncodeFnTy = bool (Derived::*)(GenericValuePart &&, ValuePart &&);
+    static constexpr auto fns = []() {
+#define REDUCE_OP(op)                                                          \
+  {&Derived::encode_reduce_##op##_v8i1,                                        \
+   &Derived::encode_reduce_##op##_v16i1,                                       \
+   &Derived::encode_reduce_##op##_v32i1}
+      // fns[op][width_idx]
+      std::array<std::array<EncodeFnTy, 3>, 7> fns{
+          {REDUCE_OP(and),
+           REDUCE_OP(mul),
+           REDUCE_OP(umin),
+           REDUCE_OP(smax),
+           REDUCE_OP(or),
+           REDUCE_OP(umax),
+           REDUCE_OP(smin)}
+      };
+#undef REDUCE_OP
+      return fns;
+    }();
+
+    u8 op = 0;
     switch (inst->getIntrinsicID()) {
-    case llvm::Intrinsic::vector_reduce_and: {
-      derived()->encode_reduce_and_v16i1(
-          this->val_ref(inst->getOperand(0)).part(0),
-          this->result_ref(inst).part(0));
-      return true;
-    }
+    case llvm::Intrinsic::vector_reduce_and: op = 0; break;
+    case llvm::Intrinsic::vector_reduce_mul: op = 1; break;
+    case llvm::Intrinsic::vector_reduce_umin: op = 2; break;
+    case llvm::Intrinsic::vector_reduce_smax: op = 3; break;
+    case llvm::Intrinsic::vector_reduce_or: op = 4; break;
+    case llvm::Intrinsic::vector_reduce_umax: op = 5; break;
+    case llvm::Intrinsic::vector_reduce_smin: op = 6; break;
     default: return false;
     }
-    // i1 needs special handling
-    // and/mul/umin/smax = all bits one
-    // or/umax/smin = any bit one
-    // xor/add = parity
-    return false;
+
+    auto *vec_ty =
+        llvm::cast<llvm::FixedVectorType>(inst->getOperand(0)->getType());
+    unsigned nelem = vec_ty->getNumElements();
+    // Only support powers of 2 less than or equal to 32
+    if (nelem > 32 || (nelem & (nelem - 1)) != 0) {
+      return false;
+    }
+
+    EncodeFnTy fn = fns[op][llvm::Log2_32(nelem) - 3];
+    auto src_ref = this->val_ref(inst->getOperand(0));
+    auto res_ref = this->result_ref(inst);
+
+    return (derived()->*fn)(src_ref.part(0), res_ref.part(0));
   }
 
   LLVMBasicValType elem_ty = info.type;

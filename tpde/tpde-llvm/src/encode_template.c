@@ -25,6 +25,7 @@
 // Note: using 8/16-bit integers as parameters is problematic, as some ABIs will
 // expect an implicit extension of the argument to 32 bit (which we don't do).
 
+typedef bool i1;
 typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
@@ -75,6 +76,7 @@ typedef bool v2i1 __attribute__((ext_vector_type(2)));
 typedef bool v4i1 __attribute__((ext_vector_type(4)));
 typedef bool v8i1 __attribute__((ext_vector_type(8)));
 typedef bool v16i1 __attribute__((ext_vector_type(16)));
+typedef bool v32i1 __attribute__((ext_vector_type(32)));
 
 // clang-format off
 
@@ -486,6 +488,31 @@ v2u64 TARGET_V1 lorv2u64(v2u64 a, v2u64 b) { return (a | b); }
 v2u64 TARGET_V1 shlv2u64(v2u64 a, v2u64 b) { return (a << b); }
 v2u64 TARGET_V1 shrv2u64(v2u64 a, v2u64 b) { return (a >> b); }
 v2i64 TARGET_V1 ashrv2i64(v2i64 a, v2i64 b) { return (a >> b); }
+
+// --------------------------
+// 1-bit vector reductions
+// --------------------------
+#define REDUCE_VI1_ALL(op) \
+i1 reduce_##op##_v8i1(v8i1 a) { return (union { v8i1 v; u8 r; }) {.v = a}.r == UINT8_MAX ? 1 : 0; } \
+i1 reduce_##op##_v16i1(v16i1 a) { return (union { v16i1 v; u16 r; }) {.v = a}.r == UINT16_MAX ? 1 : 0; } \
+i1 reduce_##op##_v32i1(v32i1 a) { return (union { v32i1 v; u32 r; }) {.v = a}.r == UINT32_MAX ? 1 : 0; }
+
+#define REDUCE_VI1_NONZERO(op) \
+i1 reduce_##op##_v8i1(v8i1 a) { return (union { v8i1 v; u8 r; }) {.v = a}.r > 0 ? 1 : 0; } \
+i1 reduce_##op##_v16i1(v16i1 a) { return (union { v16i1 v; u16 r; }) {.v = a}.r > 0 ? 1 : 0; } \
+i1 reduce_##op##_v32i1(v32i1 a) { return (union { v32i1 v; u32 r; }) {.v = a}.r > 0 ? 1 : 0; }
+
+REDUCE_VI1_ALL(and)
+REDUCE_VI1_ALL(mul)
+REDUCE_VI1_ALL(umin)
+REDUCE_VI1_ALL(smax)
+REDUCE_VI1_NONZERO(or)
+REDUCE_VI1_NONZERO(umax)
+REDUCE_VI1_NONZERO(smin)
+
+// --------------------------
+// Integer comparisons
+// --------------------------
 
 #define ICMP_SCALAR(pred, cmp, sign, bits)                                     \
     bool TARGET_V1 icmp_##pred##i##bits(sign##bits a, sign##bits b) { return a cmp b; } \

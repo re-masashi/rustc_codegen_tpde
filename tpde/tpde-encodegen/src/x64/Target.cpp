@@ -789,6 +789,8 @@ void EncodingTargetX64::get_inst_candidates(
   } else if (Name == "VZEROUPPER") {
     handle_default("VZEROUPPER");
 
+  } else if (Name == "VMOVSDto64rr") {
+    handle_default("VMOVQ_X2Grr");
   } else if (Name == "VMOVAPSYrm") {
     handle_default("VMOVAPS256rm", 1);
   } else if (Name == "VMOVAPSZrm") {

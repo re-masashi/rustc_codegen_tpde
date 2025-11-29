@@ -1747,11 +1747,12 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
 
   bool width_is_32 = width <= 32;
   if (u32 dst_width = util::align_up(width, 32); width != dst_width) {
+    // Only generate integer extension for the last 64 bits.
     derived()->generate_raw_intext(cmp_tmp_regs.back().first,
                                    cmp_tmp_regs.back().first,
                                    false,
                                    width % 64,
-                                   dst_width - width);
+                                   dst_width - (width - (width % 64)));
   }
 
   // We must not evict any registers in the branching code, as we don't track

@@ -760,6 +760,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("UMINVv16i8v", "UMINV16b");
   case_default("SMAXVv8i8v", "SMAXV8b");
   case_default("UMAXVv8i8v", "UMAXV8b");
+  case_default("UMAXVv16i8v", "UMAXV8h");
+  case_default("UMAXVv32i8v", "UMAXV8s");
+  case_default("UMAXVv64i8v", "UMAXV8d");
   case_default("ADDVv8i8v", "ADDV8b");
   case_default("ADDVv16i8v", "ADDV16b");
   case_default("ADDVv4i16v", "ADDV4h");
@@ -875,6 +878,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("FMOVWSr", "FMOVsw");
   case_default("FMOVXDr", "FMOVdx");
   case_default("UMOVvi64", "UMOVxd");
+  case_default("INSvi8gpr", "INSbx");
+  case_default("INSvi16gpr", "INShx");
+  case_default("INSvi32gpr", "INSbx");
   case_default("INSvi64gpr", "INSdx");
 
   case_default("CASB", "CASB");
