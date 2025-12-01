@@ -801,6 +801,7 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("ZIP1v2i32", "ZIP1_2s");
   case_default("ZIP1v4i32", "ZIP1_4s");
   case_default("ZIP1v2i64", "ZIP1_2d");
+
   case_default("USHLv8i8", "USHL8b");
   case_default("USHLv16i8", "USHL16b");
   case_default("USHLv4i16", "USHL4h");
@@ -808,6 +809,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("USHLv2i32", "USHL2s");
   case_default("USHLv4i32", "USHL4s");
   case_default("USHLv2i64", "USHL2d");
+  case_default("USHLLv8i8", "USHLL_8hi");
+  case_default("USHLLv4i16", "USHLL_4si");
+  case_default("USHLLv2i32", "USHLL_2di");
   case_default("SSHLv8i8", "SSHL8b");
   case_default("SSHLv16i8", "SSHL16b");
   case_default("SSHLv4i16", "SSHL4h");
@@ -815,6 +819,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("SSHLv2i32", "SSHL2s");
   case_default("SSHLv4i32", "SSHL4s");
   case_default("SSHLv2i64", "SSHL2d");
+  case_default("SSHLLv8i8", "SSHLL_8hi");
+  case_default("SSHLLv4i16", "SSHLL_4si");
+  case_default("SSHLLv2i32", "SSHLL_2di");
   case_default("SHLv8i8_shift", "SHL8bi");
   case_default("SHLv16i8_shift", "SHL16bi");
   case_default("SHLv4i16_shift", "SHL4hi");
@@ -822,6 +829,19 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("SHLv2i32_shift", "SHL2si");
   case_default("SHLv4i32_shift", "SHL4si");
   case_default("SHLv2i64_shift", "SHL2di");
+  case_default("SSHLLv8i8_shift", "SSHLL_8hi");
+  case_default("SSHLLv16i8_shift", "SSHLL2_8hi");
+  case_default("SSHLLv4i16_shift", "SSHLL_4si");
+  case_default("SSHLLv8i16_shift", "SSHLL2_4si");
+  case_default("SSHLLv2i32_shift", "SSHLL_2di");
+  case_default("SSHLLv4i32_shift", "SSHLL2_2di");
+  case_default("USHLLv8i8_shift", "USHLL_8hi");
+  case_default("USHLLv16i8_shift", "USHLL2_8hi");
+  case_default("USHLLv4i16_shift", "USHLL_4si");
+  case_default("USHLLv8i16_shift", "USHLL2_4si");
+  case_default("USHLLv2i32_shift", "USHLL_2di");
+  case_default("USHLLv4i32_shift", "USHLL2_2di");
+
   case_default("XTNv8i8", "XTN_8b");
   case_default("XTNv4i16", "XTN_4h");
   case_default("XTNv2i32", "XTN_2s");

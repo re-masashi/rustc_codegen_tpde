@@ -872,6 +872,8 @@ void EncodingTargetX64::get_inst_candidates(
     handle_default("SSE_PUNPCKLDQrm", 2);
   } else if (Name == "UNPCKHPDrr") {
     handle_default("SSE_UNPCKHPDrr");
+  } else if (Name == "UNPCKLPSrr") {
+    handle_default("SSE_UNPCKLPSrr");
 
   } else if (Name == "INC8r") {
     handle_default("INC8r");

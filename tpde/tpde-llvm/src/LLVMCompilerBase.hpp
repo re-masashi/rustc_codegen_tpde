@@ -475,6 +475,9 @@ public:
                          u64) noexcept;
   bool
       compile_int_ext(const llvm::Instruction *, const ValInfo &, u64) noexcept;
+  bool compile_int_ext_vector(const llvm::Instruction *,
+                              const ValInfo &,
+                              u64) noexcept;
   bool compile_ptr_to_int(const llvm::Instruction *,
                           const ValInfo &,
                           u64) noexcept;
@@ -2756,7 +2759,10 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_trunc(
 
 template <typename Adaptor, typename Derived, typename Config>
 bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_ext(
-    const llvm::Instruction *inst, const ValInfo &, u64 sign) noexcept {
+    const llvm::Instruction *inst, const ValInfo &val_info, u64 sign) noexcept {
+  if (inst->getType()->isVectorTy()) {
+    return LLVMCompilerBase::compile_int_ext_vector(inst, val_info, sign);
+  }
   if (!inst->getType()->isIntegerTy()) {
     return false;
   }
@@ -2816,6 +2822,75 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_ptr_to_int(
   // TODO: implement vector ptrtoint with truncation.
   // Might simply reuse compile_trunc for this.
   return false;
+}
+
+template <typename Adaptor, typename Derived, typename Config>
+bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_ext_vector(
+    const llvm::Instruction *inst, const ValInfo &, u64 sign) noexcept {
+  auto *src_val = inst->getOperand(0);
+
+  auto *dst_vec_ty = llvm::cast<llvm::FixedVectorType>(inst->getType());
+  unsigned dst_width = dst_vec_ty->getElementType()->getIntegerBitWidth();
+  auto *src_vec_ty = llvm::cast<llvm::FixedVectorType>(src_val->getType());
+  unsigned src_width = src_vec_ty->getElementType()->getIntegerBitWidth();
+  if (dst_width != 2 * src_width) {
+    // Extending by anything other than the bit width of the source is
+    // unsupported
+    return false;
+  }
+
+  auto src_ref = this->val_ref(src_val);
+  auto [ty, _] = this->adaptor->lower_type(src_val);
+  unsigned conv_idx;
+  bool single_result = true;
+  switch (ty) {
+  // Return one ValuePart
+  case LLVMBasicValType::v16i8:
+    conv_idx = 0;
+    single_result = true;
+    break;
+  case LLVMBasicValType::v8i16:
+    conv_idx = 1;
+    single_result = true;
+    break;
+  // Return two ValueParts
+  case LLVMBasicValType::v8i8: conv_idx = 0; break;
+  case LLVMBasicValType::v4i16: conv_idx = 1; break;
+  case LLVMBasicValType::v2i32: conv_idx = 2; break;
+  // Complex vector type sign extension is currently unsupported
+  default: return false;
+  }
+
+  if (single_result) {
+    using EncodeFnTy = bool (Derived::*)(GenericValuePart &&, ValuePart &&);
+    static constexpr auto fns = []() constexpr {
+      // fns[type][sign/zero]
+      std::array<EncodeFnTy[2], 3> res{
+          {{&Derived::encode_sext_v8i8, &Derived::encode_zext_v8i8},
+           {&Derived::encode_sext_v4i16, &Derived::encode_zext_v4i16},
+           {&Derived::encode_sext_v2i32, &Derived::encode_zext_v2i32}}
+      };
+      return res;
+    }();
+    EncodeFnTy encode_fn = fns[conv_idx][sign];
+    auto result_ref = this->result_ref(inst);
+    return (derived()->*encode_fn)(src_ref.part(0), result_ref.part(0));
+  } else {
+    using EncodeFnTy =
+        bool (Derived::*)(GenericValuePart &&, ValuePart &&, ValuePart &&);
+    static constexpr auto fns = []() constexpr {
+      // fns[type][sign/zero]
+      std::array<EncodeFnTy[2], 2> res{
+          {{&Derived::encode_sext_v16i8, &Derived::encode_zext_v16i8},
+           {&Derived::encode_sext_v8i16, &Derived::encode_zext_v8i16}}
+      };
+      return res;
+    }();
+    EncodeFnTy encode_fn = fns[conv_idx][sign];
+    auto result_ref = this->result_ref(inst);
+    return (derived()->*encode_fn)(
+        src_ref.part(0), result_ref.part(0), result_ref.part(1));
+  }
 }
 
 template <typename Adaptor, typename Derived, typename Config>

@@ -49,3 +49,67 @@ entry:
   %2 = call { i128, i1 } @llvm.ssub.with.overflow.i128(i128 %0, i128 %1)
   ret { i128, i1 } %2
 }
+
+; --------------------------
+; Vector extensions
+; --------------------------
+
+define <8 x i16> @sext_v8i8(<8 x i8> %0) {
+entry:
+  %2 = sext <8 x i8> %0 to <8 x i16>
+  ret <8 x i16> %2
+}
+
+define <8 x i16> @zext_v8i8(<8 x i8> %0) {
+entry:
+  %2 = zext <8 x i8> %0 to <8 x i16>
+  ret <8 x i16> %2
+}
+
+define <16 x i16> @sext_v16i8(<16 x i8> %0) {
+entry:
+  %2 = sext <16 x i8> %0 to <16 x i16>
+  ret <16 x i16> %2
+}
+
+define <16 x i16> @zext_v16i8(<16 x i8> %0) {
+entry:
+  %2 = zext <16 x i8> %0 to <16 x i16>
+  ret <16 x i16> %2
+}
+
+define <4 x i32> @sext_v4i16(<4 x i16> %0) {
+entry:
+  %2 = sext <4 x i16> %0 to <4 x i32>
+  ret <4 x i32> %2
+}
+
+define <4 x i32> @zext_v4i16(<4 x i16> %0) {
+entry:
+  %2 = zext <4 x i16> %0 to <4 x i32>
+  ret <4 x i32> %2
+}
+
+define <8 x i32> @sext_v8i16(<8 x i16> %0) {
+entry:
+  %2 = sext <8 x i16> %0 to <8 x i32>
+  ret <8 x i32> %2
+}
+
+define <8 x i32> @zext_v8i16(<8 x i16> %0) {
+entry:
+  %2 = zext <8 x i16> %0 to <8 x i32>
+  ret <8 x i32> %2
+}
+
+define <2 x i64> @sext_v2i32(<2 x i32> %0) {
+entry:
+  %2 = sext <2 x i32> %0 to <2 x i64>
+  ret <2 x i64> %2
+}
+
+define <2 x i64> @zext_v2i32(<2 x i32> %0) {
+entry:
+  %2 = zext <2 x i32> %0 to <2 x i64>
+  ret <2 x i64> %2
+}
