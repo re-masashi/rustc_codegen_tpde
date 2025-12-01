@@ -43,7 +43,7 @@ pub(crate) fn run(
             &["rustc_calls_cgtpde", "cgtpde_calls_rustc"]
         };
 
-    let mut cmd = ABI_CAFE.run(bootstrap_host_compiler, dirs);
+    let mut cmd = ABI_CAFE.run(bootstrap_host_compiler, dirs, "abi_cafe");
     cmd.arg("--");
 
     cmd.arg("--debug");

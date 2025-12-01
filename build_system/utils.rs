@@ -113,6 +113,7 @@ impl CargoProject {
             .arg("--target-dir")
             .arg(self.target_dir(dirs))
             .arg("--locked")
+            .arg("--offline")
             // bootstrap sets both RUSTC and RUSTC_WRAPPER to the same wrapper. RUSTC is already
             // respected by the rustc-tpde wrapper, but RUSTC_WRAPPER will misinterpret rustc-tpde
             // as filename, so we need to unset it.
@@ -126,7 +127,31 @@ impl CargoProject {
     }
 
     #[must_use]
-    fn build_cmd(&self, command: &str, compiler: &Compiler, dirs: &Dirs) -> Command {
+    fn build_cmd(
+        &self,
+        command: &str,
+        compiler: &Compiler,
+        dirs: &Dirs,
+        crate_name: &str,
+    ) -> Command {
+        let mut fetch_cmd = Command::new(&compiler.cargo);
+        fetch_cmd
+            .arg("fetch")
+            .arg("--manifest-path")
+            .arg(self.manifest_path(dirs))
+            .env_remove("RUSTC_WRAPPER")
+            .env("RUSTC", &compiler.rustc);
+        eprintln!("[FETCH] {crate_name}");
+
+        let fetch_output = fetch_cmd.output().unwrap();
+        if !fetch_output.status.success() {
+            panic!(
+                "{fetch_cmd:?} failed:\nStdout:\n{}\nStderr:\n{}",
+                String::from_utf8_lossy(&fetch_output.stdout),
+                String::from_utf8_lossy(&fetch_output.stderr)
+            );
+        }
+
         let mut cmd = self.base_cmd(command, &compiler.cargo, dirs);
 
         cmd.arg("--target").arg(&compiler.triple);
@@ -150,18 +175,18 @@ impl CargoProject {
     }
 
     #[must_use]
-    pub(crate) fn build(&self, compiler: &Compiler, dirs: &Dirs) -> Command {
-        self.build_cmd("build", compiler, dirs)
+    pub(crate) fn build(&self, compiler: &Compiler, dirs: &Dirs, crate_name: &str) -> Command {
+        self.build_cmd("build", compiler, dirs, crate_name)
     }
 
     #[must_use]
-    pub(crate) fn test(&self, compiler: &Compiler, dirs: &Dirs) -> Command {
-        self.build_cmd("test", compiler, dirs)
+    pub(crate) fn test(&self, compiler: &Compiler, dirs: &Dirs, crate_name: &str) -> Command {
+        self.build_cmd("test", compiler, dirs, crate_name)
     }
 
     #[must_use]
-    pub(crate) fn run(&self, compiler: &Compiler, dirs: &Dirs) -> Command {
-        self.build_cmd("run", compiler, dirs)
+    pub(crate) fn run(&self, compiler: &Compiler, dirs: &Dirs, crate_name: &str) -> Command {
+        self.build_cmd("run", compiler, dirs, crate_name)
     }
 }
 

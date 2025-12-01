@@ -109,12 +109,12 @@ const BASE_SYSROOT_SUITE: &[TestCase] = &[
         target_compiler.rustflags.extend(["--cfg".to_owned(), "randomized_layouts".to_owned()]);
 
         if runner.is_native {
-            let mut test_cmd = SYSROOT_TESTS.test(&target_compiler, &runner.dirs);
+            let mut test_cmd = SYSROOT_TESTS.test(&target_compiler, &runner.dirs, "sysroot");
             test_cmd.args(["-p", "coretests", "-p", "alloctests", "--tests", "--", "-q"]);
             spawn_and_wait(test_cmd);
         } else {
             eprintln!("Cross-Compiling: Not running tests");
-            let mut build_cmd = SYSROOT_TESTS.build(&target_compiler, &runner.dirs);
+            let mut build_cmd = SYSROOT_TESTS.build(&target_compiler, &runner.dirs, "sysroot");
             build_cmd.args(["-p", "coretests", "-p", "alloctests", "--tests"]);
             spawn_and_wait(build_cmd);
         }
@@ -166,12 +166,12 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
         RAND.clean(&runner.dirs);
 
         if runner.is_native {
-            let mut test_cmd = RAND.test(&runner.target_compiler, &runner.dirs);
+            let mut test_cmd = RAND.test(&runner.target_compiler, &runner.dirs, "rand");
             test_cmd.arg("--workspace").arg("--").arg("-q");
             spawn_and_wait(test_cmd);
         } else {
             eprintln!("Cross-Compiling: Not running tests");
-            let mut build_cmd = RAND.build(&runner.target_compiler, &runner.dirs);
+            let mut build_cmd = RAND.build(&runner.target_compiler, &runner.dirs, "rand");
             build_cmd.arg("--workspace").arg("--tests");
             spawn_and_wait(build_cmd);
         }
@@ -182,7 +182,7 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
         REGEX.clean(&runner.dirs);
 
         if runner.is_native {
-            let mut run_cmd = REGEX.test(&runner.target_compiler, &runner.dirs);
+            let mut run_cmd = REGEX.test(&runner.target_compiler, &runner.dirs, "regex");
             // regex-capi and regex-debug don't have any tests. Nor do they contain any code
             // that is useful to test with cg_tpde. Skip building them to reduce test time.
             run_cmd.args([
@@ -197,14 +197,14 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
             ]);
             spawn_and_wait(run_cmd);
 
-            let mut run_cmd = REGEX.test(&runner.target_compiler, &runner.dirs);
+            let mut run_cmd = REGEX.test(&runner.target_compiler, &runner.dirs, "regex");
             // don't run integration tests for regex-autonata. they take like 2min each without
             // much extra coverage of simd usage.
             run_cmd.args(["-p", "regex-automata", "--release", "--lib", "--", "-q"]);
             spawn_and_wait(run_cmd);
         } else {
             eprintln!("Cross-Compiling: Not running tests");
-            let mut build_cmd = REGEX.build(&runner.target_compiler, &runner.dirs);
+            let mut build_cmd = REGEX.build(&runner.target_compiler, &runner.dirs, "regex");
             build_cmd.arg("--tests");
             spawn_and_wait(build_cmd);
         }
@@ -219,13 +219,14 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
 
         PORTABLE_SIMD.clean(&runner.dirs);
 
-        let build_cmd = PORTABLE_SIMD.build(&runner.target_compiler, &runner.dirs);
+        let build_cmd = PORTABLE_SIMD.build(&runner.target_compiler, &runner.dirs, "portable-simd");
         // FIXME uncomment once examples work: https://github.com/rust-lang/portable-simd/issues/470
         //build_cmd.arg("--all-targets");
         spawn_and_wait(build_cmd);
 
         if runner.is_native {
-            let mut test_cmd = PORTABLE_SIMD.test(&runner.target_compiler, &runner.dirs);
+            let mut test_cmd =
+                PORTABLE_SIMD.test(&runner.target_compiler, &runner.dirs, "portable-simd");
             // FIXME remove --tests once examples work: https://github.com/rust-lang/portable-simd/issues/470
             test_cmd.arg("-q").arg("--tests");
             spawn_and_wait(test_cmd);
@@ -237,12 +238,12 @@ const EXTENDED_SYSROOT_SUITE: &[TestCase] = &[
         PINGORA.clean(&runner.dirs);
 
         if runner.is_native {
-            let mut test_cmd = PINGORA.test(&runner.target_compiler, &runner.dirs);
+            let mut test_cmd = PINGORA.test(&runner.target_compiler, &runner.dirs, "pingora");
             test_cmd.arg("--workspace").arg("--").arg("-q");
             spawn_and_wait(test_cmd);
         } else {
             eprintln!("Cross-Compiling: Not running tests");
-            let mut build_cmd = PINGORA.build(&runner.target_compiler, &runner.dirs);
+            let mut build_cmd = PINGORA.build(&runner.target_compiler, &runner.dirs, "pingora");
             build_cmd.arg("--workspace").arg("--tests");
             spawn_and_wait(build_cmd);
         }

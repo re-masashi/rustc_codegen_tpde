@@ -230,7 +230,7 @@ fn build_tpde_sysroot_for_triple(
         ));
     }
     compiler.rustflags.extend(rustflags);
-    let mut build_cmd = STANDARD_LIBRARY.build(&compiler, dirs);
+    let mut build_cmd = STANDARD_LIBRARY.build(&compiler, dirs, "stdlib");
     build_cmd.arg("--release");
     build_cmd.arg("--features").arg("backtrace panic-unwind");
     build_cmd.arg(format!("-Zroot-dir={}", STDLIB_SRC.to_path(dirs).display()));

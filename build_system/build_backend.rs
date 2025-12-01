@@ -13,7 +13,7 @@ static CG_TPDE: CargoProject = CargoProject::new(&RelPath::source("."), "cg_tpde
 pub(crate) fn build_backend(dirs: &Dirs, bootstrap_host_compiler: &Compiler) -> PathBuf {
     let _group = LogGroup::guard("Build backend");
 
-    let mut cmd = CG_TPDE.build(bootstrap_host_compiler, dirs);
+    let mut cmd = CG_TPDE.build(bootstrap_host_compiler, dirs, "rustc_codegen_tpde");
 
     let mut rustflags = rustflags_from_env("RUSTFLAGS");
     rustflags.extend(rust_linker_flags());
