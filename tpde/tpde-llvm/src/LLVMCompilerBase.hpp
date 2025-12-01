@@ -5064,77 +5064,153 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_intrin(
     const auto width = inst->getType()->getIntegerBitWidth();
     // Implementing non-powers-of-two is difficult, would require modulo
     // of shift amount. Doesn't really occur in practice.
-    if (width != 8 && width != 16 && width != 32 && width != 64) {
+    if (width != 8 && width != 16 && width != 32 && width != 64 &&
+        width != 128) {
       return false;
     }
 
-    auto [res_vr, res_ref] = this->result_ref_single(inst);
+    if (width == 128) {
+      // Rotate amounts only have to be passed as 64-bit values
+      auto res_ref = this->result_ref(inst);
 
-    // TODO: generate better code for constant amounts.
-    bool shift_left = intrin_id == llvm::Intrinsic::fshl;
-    if (inst->getOperand(0) == inst->getOperand(1)) {
-      // Better code for rotate.
-      using EncodeFnTy = bool (Derived::*)(
-          GenericValuePart &&, GenericValuePart &&, ValuePart &);
-      EncodeFnTy fn = nullptr;
-      if (shift_left) {
-        switch (width) {
-        case 8: fn = &Derived::encode_roli8; break;
-        case 16: fn = &Derived::encode_roli16; break;
-        case 32: fn = &Derived::encode_roli32; break;
-        case 64: fn = &Derived::encode_roli64; break;
-        default: TPDE_UNREACHABLE("unreachable width");
+      // TODO: generate better code for constant amounts.
+      bool shift_left = intrin_id == llvm::Intrinsic::fshl;
+      if (inst->getOperand(0) == inst->getOperand(1)) {
+        // Better code for rotate.
+        using EncodeFnTy = bool (Derived::*)(GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             ValuePart &&,
+                                             ValuePart &&);
+        EncodeFnTy fn = nullptr;
+        if (shift_left) {
+          switch (width) {
+          case 128: fn = &Derived::encode_roli128; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        } else {
+          switch (width) {
+          case 128: fn = &Derived::encode_rori128; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        }
+
+        // ref-count; do this first so that lhs might see ref_count == 1
+        (void)this->val_ref(inst->getOperand(1));
+        auto lhs = this->val_ref(inst->getOperand(0));
+        auto amt = this->val_ref(inst->getOperand(2));
+        if (!(derived()->*fn)(lhs.part(0),
+                              lhs.part(1),
+                              amt.part(0),
+                              res_ref.part(0),
+                              res_ref.part(1))) {
+          return false;
         }
       } else {
-        switch (width) {
-        case 8: fn = &Derived::encode_rori8; break;
-        case 16: fn = &Derived::encode_rori16; break;
-        case 32: fn = &Derived::encode_rori32; break;
-        case 64: fn = &Derived::encode_rori64; break;
-        default: TPDE_UNREACHABLE("unreachable width");
+        using EncodeFnTy = bool (Derived::*)(GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             ValuePart &&,
+                                             ValuePart &&);
+        EncodeFnTy fn = nullptr;
+        if (shift_left) {
+          switch (width) {
+          case 128: fn = &Derived::encode_fshli128; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        } else {
+          switch (width) {
+          case 128: fn = &Derived::encode_fshri128; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        }
+
+        auto lhs = this->val_ref(inst->getOperand(0));
+        auto rhs = this->val_ref(inst->getOperand(1));
+        auto amt = this->val_ref(inst->getOperand(2));
+        if (!(derived()->*fn)(lhs.part(0),
+                              lhs.part(1),
+                              rhs.part(0),
+                              rhs.part(1),
+                              amt.part(0),
+                              res_ref.part(0),
+                              res_ref.part(1))) {
+          return false;
         }
       }
 
-      // ref-count; do this first so that lhs might see ref_count == 1
-      (void)this->val_ref(inst->getOperand(1));
-      auto lhs = this->val_ref(inst->getOperand(0));
-      auto amt = this->val_ref(inst->getOperand(2));
-      if (!(derived()->*fn)(lhs.part(0), amt.part(0), res_ref)) {
-        return false;
-      }
+      return true;
     } else {
-      using EncodeFnTy = bool (Derived::*)(GenericValuePart &&,
-                                           GenericValuePart &&,
-                                           GenericValuePart &&,
-                                           ValuePart &);
-      EncodeFnTy fn = nullptr;
-      if (shift_left) {
-        switch (width) {
-        case 8: fn = &Derived::encode_fshli8; break;
-        case 16: fn = &Derived::encode_fshli16; break;
-        case 32: fn = &Derived::encode_fshli32; break;
-        case 64: fn = &Derived::encode_fshli64; break;
-        default: TPDE_UNREACHABLE("unreachable width");
+      auto [res_vr, res_ref] = this->result_ref_single(inst);
+
+      // TODO: generate better code for constant amounts.
+      bool shift_left = intrin_id == llvm::Intrinsic::fshl;
+      if (inst->getOperand(0) == inst->getOperand(1)) {
+        // Better code for rotate.
+        using EncodeFnTy = bool (Derived::*)(
+            GenericValuePart &&, GenericValuePart &&, ValuePart &);
+        EncodeFnTy fn = nullptr;
+        if (shift_left) {
+          switch (width) {
+          case 8: fn = &Derived::encode_roli8; break;
+          case 16: fn = &Derived::encode_roli16; break;
+          case 32: fn = &Derived::encode_roli32; break;
+          case 64: fn = &Derived::encode_roli64; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        } else {
+          switch (width) {
+          case 8: fn = &Derived::encode_rori8; break;
+          case 16: fn = &Derived::encode_rori16; break;
+          case 32: fn = &Derived::encode_rori32; break;
+          case 64: fn = &Derived::encode_rori64; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        }
+
+        // ref-count; do this first so that lhs might see ref_count == 1
+        (void)this->val_ref(inst->getOperand(1));
+        auto lhs = this->val_ref(inst->getOperand(0));
+        auto amt = this->val_ref(inst->getOperand(2));
+        if (!(derived()->*fn)(lhs.part(0), amt.part(0), res_ref)) {
+          return false;
         }
       } else {
-        switch (width) {
-        case 8: fn = &Derived::encode_fshri8; break;
-        case 16: fn = &Derived::encode_fshri16; break;
-        case 32: fn = &Derived::encode_fshri32; break;
-        case 64: fn = &Derived::encode_fshri64; break;
-        default: TPDE_UNREACHABLE("unreachable width");
+        using EncodeFnTy = bool (Derived::*)(GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             GenericValuePart &&,
+                                             ValuePart &);
+        EncodeFnTy fn = nullptr;
+        if (shift_left) {
+          switch (width) {
+          case 8: fn = &Derived::encode_fshli8; break;
+          case 16: fn = &Derived::encode_fshli16; break;
+          case 32: fn = &Derived::encode_fshli32; break;
+          case 64: fn = &Derived::encode_fshli64; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        } else {
+          switch (width) {
+          case 8: fn = &Derived::encode_fshri8; break;
+          case 16: fn = &Derived::encode_fshri16; break;
+          case 32: fn = &Derived::encode_fshri32; break;
+          case 64: fn = &Derived::encode_fshri64; break;
+          default: TPDE_UNREACHABLE("unreachable width");
+          }
+        }
+
+        auto lhs = this->val_ref(inst->getOperand(0));
+        auto rhs = this->val_ref(inst->getOperand(1));
+        auto amt = this->val_ref(inst->getOperand(2));
+        if (!(derived()->*fn)(lhs.part(0), rhs.part(0), amt.part(0), res_ref)) {
+          return false;
         }
       }
 
-      auto lhs = this->val_ref(inst->getOperand(0));
-      auto rhs = this->val_ref(inst->getOperand(1));
-      auto amt = this->val_ref(inst->getOperand(2));
-      if (!(derived()->*fn)(lhs.part(0), rhs.part(0), amt.part(0), res_ref)) {
-        return false;
-      }
+      return true;
     }
-
-    return true;
   }
   case llvm::Intrinsic::bswap: {
     auto *val = inst->getOperand(0);
