@@ -492,6 +492,7 @@ v2i64 TARGET_V1 ashrv2i64(v2i64 a, v2i64 b) { return (a >> b); }
 // --------------------------
 // 1-bit vector reductions
 // --------------------------
+
 #define REDUCE_VI1_ALL(op) \
 i1 reduce_##op##_v8i1(v8i1 a) { return (union { v8i1 v; u8 r; }) {.v = a}.r == UINT8_MAX ? 1 : 0; } \
 i1 reduce_##op##_v16i1(v16i1 a) { return (union { v16i1 v; u16 r; }) {.v = a}.r == UINT16_MAX ? 1 : 0; } \
@@ -1103,6 +1104,10 @@ FOPS(double)
 // --------------------------
 // x86-64 intrinsics
 // --------------------------
+#ifdef __SSE2__
+v2i64 llvm_sse2_psad_bw(v16i8, v16i8) __asm__("llvm.x86.sse2.psad.bw");
+v2i64 sse2_psad_bw(v16i8 a, v16i8 b) { return llvm_sse2_psad_bw(a, b); }
+#endif
 #ifdef __SSSE3__
 v16i8 llvm_ssse3_pshufb_128(v16i8, v16i8) __asm__("llvm.x86.ssse3.pshuf.b.128");
 v16i8 ssse3_pshufb_128(v16i8 a, v16i8 b) { return llvm_ssse3_pshufb_128(a, b);}

@@ -40,7 +40,7 @@ aot.raw-dylib
 #test.sysroot
 
 testsuite.extended_sysroot
-#test.cloudflare/pingora
+test.cloudflare/pingora
 test.rust-random/rand
 test.regex
 test.portable-simd
