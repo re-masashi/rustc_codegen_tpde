@@ -3455,6 +3455,10 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_icmp_vector(
   llvm::Value *lhs = icmp->getOperand(0);
   llvm::Value *rhs = icmp->getOperand(1);
 
+  unsigned src_width = llvm::cast<llvm::FixedVectorType>(lhs->getType())
+                           ->getElementType()
+                           ->getIntegerBitWidth();
+
   u32 pred_idx = icmp->getPredicate() - llvm::ICmpInst::FIRST_ICMP_PREDICATE;
 
   auto [ty, _] = this->adaptor->lower_type(lhs);
@@ -3470,15 +3474,18 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_icmp_vector(
   case LLVMBasicValType::complex: {
     auto *vec_ty = llvm::cast<llvm::FixedVectorType>(lhs->getType());
     unsigned nelem = vec_ty->getNumElements();
+    bool needs_extension = false;
     auto [elem_ty, _] = this->adaptor->lower_type(vec_ty->getElementType());
     switch (elem_ty) {
     case LLVMBasicValType::i8:
     case LLVMBasicValType::i16:
-      // TODO: support i1/i8/i16 vector icmp, needs element extension.
-      return false;
+      needs_extension = true;
+      ty_idx = 7;
+      break;
     case LLVMBasicValType::i32: ty_idx = 7; break;
     case LLVMBasicValType::i64:
     case LLVMBasicValType::ptr: ty_idx = 8; break;
+    // TODO: support i1
     default: TPDE_UNREACHABLE("unexpected legal icmp vector type");
     }
 
@@ -3496,6 +3503,10 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_icmp_vector(
     for (unsigned i = 0; i != nelem; i++) {
       derived()->extract_element(lhs_vr_disowned, i, elem_ty, e_lhs);
       derived()->extract_element(rhs_vr_disowned, i, elem_ty, e_rhs);
+      if (needs_extension) {
+        e_lhs = std::move(e_lhs).into_extended(icmp->isSigned(), src_width, 32);
+        e_rhs = std::move(e_rhs).into_extended(icmp->isSigned(), src_width, 32);
+      }
       (derived()->*fn)(std::move(e_lhs), std::move(e_rhs), std::move(tmp));
       derived()->insert_element(res, i, LLVMBasicValType::i1, std::move(tmp));
     }
