@@ -860,6 +860,8 @@ void EncodingTargetX64::get_inst_candidates(
     handle_default("SSE_MOVQ_G2Xrr");
   } else if (Name == "MOVSS2DIrr") {
     handle_default("SSE_MOVD_X2Grr");
+  } else if (Name == "MOVDI2PDIrr") {
+    handle_default("SSE_MOVD_G2Xrr", -1);
   } else if (Name == "MOVDI2PDIrm") {
     handle_default("SSE_MOVD_G2Xrm", 1);
   } else if (Name == "MOVQI2PQIrm") {

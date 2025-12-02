@@ -898,9 +898,9 @@ void EncodingTargetArm64::get_inst_candidates(
   case_default("FMOVWSr", "FMOVsw");
   case_default("FMOVXDr", "FMOVdx");
   case_default("UMOVvi64", "UMOVxd");
-  case_default("INSvi8gpr", "INSbx");
-  case_default("INSvi16gpr", "INShx");
-  case_default("INSvi32gpr", "INSbx");
+  case_default("INSvi8gpr", "INSbw");
+  case_default("INSvi16gpr", "INShw");
+  case_default("INSvi32gpr", "INSsw");
   case_default("INSvi64gpr", "INSdx");
 
   case_default("CASB", "CASB");

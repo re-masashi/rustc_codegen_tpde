@@ -54,6 +54,20 @@ entry:
 ; Vector extensions
 ; --------------------------
 
+define <32 x i8> @sext_v32i1(i32 %0) {
+entry:
+  %1 = bitcast i32 %0 to <32 x i1>
+  %2 = sext <32 x i1> %1 to <32 x i8>
+  ret <32 x i8> %2
+}
+
+define <32 x i8> @zext_v32i1(i32 %0) {
+entry:
+  %1 = bitcast i32 %0 to <32 x i1>
+  %2 = zext <32 x i1> %1 to <32 x i8>
+  ret <32 x i8> %2
+}
+
 define <8 x i16> @sext_v8i8(<8 x i8> %0) {
 entry:
   %2 = sext <8 x i8> %0 to <8 x i16>

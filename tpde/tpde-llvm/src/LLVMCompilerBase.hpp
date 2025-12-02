@@ -2833,9 +2833,9 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_ext_vector(
   unsigned dst_width = dst_vec_ty->getElementType()->getIntegerBitWidth();
   auto *src_vec_ty = llvm::cast<llvm::FixedVectorType>(src_val->getType());
   unsigned src_width = src_vec_ty->getElementType()->getIntegerBitWidth();
-  if (dst_width != 2 * src_width) {
+  if (dst_width != 2 * src_width && !(dst_width == 8 && src_width == 1)) {
     // Extending by anything other than the bit width of the source is
-    // unsupported
+    // unsupported, except for a 1-bit source
     return false;
   }
 
@@ -2844,16 +2844,20 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_ext_vector(
   unsigned conv_idx;
   bool single_result = true;
   switch (ty) {
-  // Return one ValuePart
+  // Return two ValueParts
   case LLVMBasicValType::v16i8:
     conv_idx = 0;
-    single_result = true;
+    single_result = false;
     break;
   case LLVMBasicValType::v8i16:
     conv_idx = 1;
-    single_result = true;
+    single_result = false;
     break;
-  // Return two ValueParts
+  case LLVMBasicValType::v32i1:
+    conv_idx = 2;
+    single_result = false;
+    break;
+  // Return one ValuePart
   case LLVMBasicValType::v8i8: conv_idx = 0; break;
   case LLVMBasicValType::v4i16: conv_idx = 1; break;
   case LLVMBasicValType::v2i32: conv_idx = 2; break;
@@ -2880,9 +2884,10 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_ext_vector(
         bool (Derived::*)(GenericValuePart &&, ValuePart &&, ValuePart &&);
     static constexpr auto fns = []() constexpr {
       // fns[type][sign/zero]
-      std::array<EncodeFnTy[2], 2> res{
+      std::array<EncodeFnTy[2], 3> res{
           {{&Derived::encode_sext_v16i8, &Derived::encode_zext_v16i8},
-           {&Derived::encode_sext_v8i16, &Derived::encode_zext_v8i16}}
+           {&Derived::encode_sext_v8i16, &Derived::encode_zext_v8i16},
+           {&Derived::encode_sext_v32i1, &Derived::encode_zext_v32i1}}
       };
       return res;
     }();
