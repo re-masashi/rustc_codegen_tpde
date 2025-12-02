@@ -1110,23 +1110,17 @@ FOPS(double)
 // --------------------------
 // x86-64 intrinsics
 // --------------------------
-#ifdef __SSE2__
+#ifdef __x86_64__
 v2i64 llvm_sse2_psad_bw(v16i8, v16i8) __asm__("llvm.x86.sse2.psad.bw");
 v2i64 sse2_psad_bw(v16i8 a, v16i8 b) { return llvm_sse2_psad_bw(a, b); }
-#endif
-#ifdef __SSSE3__
+v16i8 llvm_sse3_ldu_dq(u64 *a) __asm__("llvm.x86.sse3.ldu.dq");
+v16i8 sse3_ldu_dq(u64 *a) { return llvm_sse3_ldu_dq(a); }
+v32i8 llvm_avx_ldu_dq_256(u64 *a) __asm__("llvm.x86.avx.ldu.dq.256");
+v32i8 avx_ldu_dq_256(u64 *a) { return llvm_avx_ldu_dq_256(a); }
 v16i8 llvm_ssse3_pshufb_128(v16i8, v16i8) __asm__("llvm.x86.ssse3.pshuf.b.128");
 v16i8 ssse3_pshufb_128(v16i8 a, v16i8 b) { return llvm_ssse3_pshufb_128(a, b);}
-#endif
-#ifdef __AVX2__
 v32i8 llvm_avx2_pshufb(v32i8, v32i8) __asm__("llvm.x86.avx2.pshuf.b");
 v32i8 avx2_pshufb(v32i8 a, v32i8 b) { return llvm_avx2_pshufb(a, b);}
-#endif
-#ifdef __AVX__
-void llvm_avx_vzeroupper(void) __asm__("llvm.x86.avx.vzeroupper");
-void avx_vzeroupper(void) { llvm_avx_vzeroupper();}
-void llvm_avx_vzeroall(void) __asm__("llvm.x86.avx.vzeroall");
-void avx_vzeroall(void) { llvm_avx_vzeroall();}
 #endif
 
 // --------------------------

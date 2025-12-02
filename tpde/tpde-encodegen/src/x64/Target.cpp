@@ -790,6 +790,10 @@ void EncodingTargetX64::get_inst_candidates(
     handle_default("VZEROUPPER");
   } else if (Name == "VPSADBWrr") {
     handle_default("VPSADBW128rrr");
+  } else if (Name == "VLDDQUrm") {
+    handle_default("VLDDQU128rm", 1);
+  } else if (Name == "VLDDQUYrm") {
+    handle_default("VLDDQU256rm", 1);
 
   } else if (Name == "VMOVSDto64rr") {
     handle_default("VMOVQ_X2Grr");

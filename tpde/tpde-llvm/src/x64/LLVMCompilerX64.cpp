@@ -610,6 +610,17 @@ bool LLVMCompilerX64::handle_intrin(const llvm::IntrinsicInst *inst) noexcept {
                                    this->val_ref(inst->getOperand(1)).part(0),
                                    this->result_ref(inst).part(0));
     return true;
+    return true;
+  }
+  case llvm::Intrinsic::x86_sse3_ldu_dq: {
+    derived()->encode_sse3_ldu_dq(this->val_ref(inst->getOperand(0)).part(0),
+                                  this->result_ref(inst).part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_avx_ldu_dq_256: {
+    derived()->encode_avx_ldu_dq_256(this->val_ref(inst->getOperand(0)).part(0),
+                                     this->result_ref(inst).part(0));
+    return true;
   }
   case llvm::Intrinsic::x86_ssse3_pshuf_b_128: {
     derived()->encode_ssse3_pshufb_128(
@@ -625,11 +636,21 @@ bool LLVMCompilerX64::handle_intrin(const llvm::IntrinsicInst *inst) noexcept {
     return true;
   }
   case llvm::Intrinsic::x86_avx_vzeroupper: {
-    derived()->encode_avx_vzeroupper();
+    ASM(VZEROUPPER);
     return true;
   }
   case llvm::Intrinsic::x86_avx_vzeroall: {
-    derived()->encode_avx_vzeroall();
+    ASM(VZEROALL);
+    return true;
+  }
+  case llvm::Intrinsic::x86_pclmulqdq: {
+    auto immediate = llvm::cast<llvm::ConstantInt>(inst->getOperand(2));
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    ASM(SSE_PCLMULQDQrri,
+        dst_ref.part(0).load_to_reg(),
+        this->val_ref(inst->getOperand(1)).part(0).load_to_reg(),
+        (u8)immediate->getZExtValue());
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
     return true;
   }
   default: return false;
