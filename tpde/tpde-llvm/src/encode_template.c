@@ -421,6 +421,8 @@ u8 TARGET_V1 trunc_v8i8_1(v8i8 a) { return (union { v8i1 v; u8 r; }) {.v = __bui
 u8 TARGET_V1 trunc_v4i16_1(v4i16 a) { return (union { v4i1 v; u8 r; }) {.v = __builtin_convertvector((a & 1) != 0, v4i1)}.r; }
 u8 TARGET_V1 trunc_v2i32_1(v2i32 a) { return (union { v2i1 v; u8 r; }) {.v = __builtin_convertvector((a & 1) != 0, v2i1)}.r; }
 u16 TARGET_V1 trunc_v16i8_1(v16i8 a) { return (union { v16i1 v; u16 r; }) {.v = __builtin_convertvector((a & 1) != 0, v16i1)}.r; }
+// 256 bit value is passed as a pointer on ARM, so we force it to be a pointer on both architectures here
+u32 TARGET_V1 trunc_v32i8_1(v32i8 *a) { return (union { v32i1 v; u32 r; }) {.v = __builtin_convertvector((*a & 1) != 0, v32i1)}.r; }
 u8 TARGET_V1 trunc_v8i16_1(v8i16 a) { return (union { v8i1 v; u8 r; }) {.v = __builtin_convertvector((a & 1) != 0, v8i1)}.r; }
 u8 TARGET_V1 trunc_v4i32_1(v4i32 a) { return (union { v4i1 v; u8 r; }) {.v = __builtin_convertvector((a & 1) != 0, v4i1)}.r; }
 u8 TARGET_V1 trunc_v2i64_1(v2i64 a) { return (union { v2i1 v; u8 r; }) {.v = __builtin_convertvector((a & 1) != 0, v2i1)}.r; }

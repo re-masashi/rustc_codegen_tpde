@@ -389,6 +389,7 @@ void EncodingTargetArm64::get_inst_candidates(
 
   case_default("LDPWi", "LDPw");    // TODO: expr with base+off, merge offsets
   case_default("LDPXi", "LDPx");    // TODO: expr with base+off, merge offsets
+  case_default("LDPQi", "LDPq");    // TODO: expr with base+off, merge offsets
   case_default("STPWi", "STPw");    // TODO: expr with base+off, merge offsets
   case_default("STPXi", "STPx");    // TODO: expr with base+off, merge offsets
   case_default("STLRB", "STLRB");   // TODO: expr with base+off, merge offsets

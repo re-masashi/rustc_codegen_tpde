@@ -2729,6 +2729,17 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_int_trunc(
     case v8i16: encode_fn = &Derived::encode_trunc_v8i16_1; break;
     case v4i32: encode_fn = &Derived::encode_trunc_v4i32_1; break;
     case v2i64: encode_fn = &Derived::encode_trunc_v2i64_1; break;
+    case complex: {
+      auto *vec_ty = llvm::cast<llvm::FixedVectorType>(src->getType());
+      unsigned nelem = vec_ty->getNumElements();
+      if (nelem == 32 && bvt == v32i1) {
+        // 256 bit value is passed as a pointer
+        GenericValuePart addr =
+            derived()->val_spill_slot({src_vr.assignment(), 0});
+        return derived()->encode_trunc_v32i8_1(std::move(addr), res_vr.part(0));
+      }
+      return false;
+    }
     default: return false;
     }
     return (derived()->*encode_fn)(src_vr.part(0), res_vr.part(0));
