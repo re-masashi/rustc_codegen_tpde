@@ -779,6 +779,10 @@ void EncodingTargetX64::get_inst_candidates(
   case_default("MOVMSKPDrr", -1, "SSE_MOVMSKPDrr");
 
   case_default("MFENCE", -1, "MFENCE");
+
+  handle_ri("BT16rr", "BT16ri8", 1, -1, "BT16rr", "BT16ri");
+  handle_ri("BT32rr", "BT32ri8", 1, -1, "BT32rr", "BT32ri");
+  handle_ri("BT64rr", "BT64ri8", 1, -1, "BT64rr", "BT64ri");
   // clang-format on
 
   if (Name == "LCMPXCHG64") {
@@ -897,15 +901,6 @@ void EncodingTargetX64::get_inst_candidates(
     handle_default("DEC32r");
   } else if (Name == "DEC64r") {
     handle_default("DEC64r");
-  } else if (Name == "BT16rr") {
-    // TODO(ts): need check for imm8
-    handle_default("BT16rr");
-  } else if (Name == "BT32rr") {
-    // TODO(ts): need check for imm8
-    handle_default("BT32rr");
-  } else if (Name == "BT64rr") {
-    // TODO(ts): need check for imm8
-    handle_default("BT64rr");
   } else if (Name == "IMUL16rr") {
     // TODO: for imm replacement, use rri encoding
     handle_memrepl("IMUL16rm", 2);

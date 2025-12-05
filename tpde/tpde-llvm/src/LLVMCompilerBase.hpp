@@ -3966,11 +3966,18 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_call(
 template <typename Adaptor, typename Derived, typename Config>
 bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_select(
     const llvm::Instruction *inst, const ValInfo &val_info, u64) noexcept {
-  if (!inst->getOperand(0)->getType()->isIntegerTy()) {
+  auto select_type = inst->getOperand(0)->getType();
+  unsigned src_bit_width = 1;
+  if (select_type->isVectorTy()) {
+    auto *vec_ty = llvm::cast<llvm::FixedVectorType>(select_type);
+    select_type = vec_ty->getElementType();
+    src_bit_width = vec_ty->getNumElements();
+  }
+  if (!select_type->isIntegerTy() || select_type->getIntegerBitWidth() != 1) {
     return false;
   }
 
-  auto [cond_vr, cond] = this->val_ref_single(inst->getOperand(0));
+  ValueRef cond_vr = this->val_ref(inst->getOperand(0));
   auto lhs = this->val_ref(inst->getOperand(1));
   auto rhs = this->val_ref(inst->getOperand(2));
 
@@ -3985,18 +3992,18 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_select(
   case v16i1:
   case i32:
   case v32i1:
-    derived()->encode_select_i32(
-        std::move(cond), lhs.part(0), rhs.part(0), res.part(0));
+    derived()->encode_select_v32_i32_0(
+        cond_vr.part(0), lhs.part(0), rhs.part(0), res.part(0));
     break;
   case i64:
   case v64i1:
   case ptr:
-    derived()->encode_select_i64(
-        std::move(cond), lhs.part(0), rhs.part(0), res.part(0));
+    derived()->encode_select_v32_i64_0(
+        cond_vr.part(0), lhs.part(0), rhs.part(0), res.part(0));
     break;
   case f32:
     derived()->encode_select_f32(
-        std::move(cond), lhs.part(0), rhs.part(0), res.part(0));
+        cond_vr.part(0), lhs.part(0), rhs.part(0), res.part(0));
     break;
   case f64:
   case v8i8:
@@ -4004,7 +4011,7 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_select(
   case v2i32:
   case v2f32:
     derived()->encode_select_f64(
-        std::move(cond), lhs.part(0), rhs.part(0), res.part(0));
+        cond_vr.part(0), lhs.part(0), rhs.part(0), res.part(0));
     break;
   case f80: // x86_fp80 is mapped to XMM register, so we can reuse the logic.
   case f128:
@@ -4015,20 +4022,10 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_select(
   case v4f32:
   case v2f64:
     derived()->encode_select_v2u64(
-        std::move(cond), lhs.part(0), rhs.part(0), res.part(0));
+        cond_vr.part(0), lhs.part(0), rhs.part(0), res.part(0));
     break;
-  case complex: {
-    // Handle case of complex with two i64 as i128, this is extremely hacky...
-    // TODO(ts): support full complex types using branches
-    const auto parts = this->adaptor->val_parts(val_info);
-    if (parts.count() != 2 || parts.reg_bank(0) != Config::GP_BANK ||
-        parts.reg_bank(1) != Config::GP_BANK) {
-      return false;
-    }
-  }
-    [[fallthrough]];
   case i128: {
-    derived()->encode_select_i128(std::move(cond),
+    derived()->encode_select_i128(cond_vr.part(0),
                                   lhs.part(0),
                                   lhs.part(1),
                                   rhs.part(0),
@@ -4036,6 +4033,124 @@ bool LLVMCompilerBase<Adaptor, Derived, Config>::compile_select(
                                   res.part(0),
                                   res.part(1));
     break;
+  }
+  case complex: {
+    // Handle case of complex with two i64 as i128, this is extremely hacky...
+    const auto parts = this->adaptor->val_parts(val_info);
+    if (parts.count() == 2 && parts.reg_bank(0) == Config::GP_BANK &&
+        parts.reg_bank(1) == Config::GP_BANK) {
+      derived()->encode_select_i128(cond_vr.part(0),
+                                    lhs.part(0),
+                                    lhs.part(1),
+                                    rhs.part(0),
+                                    rhs.part(1),
+                                    res.part(0),
+                                    res.part(1));
+      return true;
+    }
+
+    // This is a legal vector type for which there is no convenient select
+    // function. We extract the elements and handle each one individually
+    auto *lhs_ty =
+        llvm::cast<llvm::FixedVectorType>(inst->getOperand(1)->getType());
+    auto *rhs_ty =
+        llvm::cast<llvm::FixedVectorType>(inst->getOperand(2)->getType());
+    unsigned nelem = lhs_ty->getNumElements();
+    if (nelem != src_bit_width || lhs_ty != rhs_ty) {
+      return false;
+    }
+
+    unsigned ty_idx = 0;
+    auto [elem_ty, _] = this->adaptor->lower_type(lhs_ty->getElementType());
+    switch (elem_ty) {
+    case LLVMBasicValType::i8: ty_idx = 0; break;
+    case LLVMBasicValType::i16: ty_idx = 1; break;
+    case LLVMBasicValType::i32: ty_idx = 2; break;
+    case LLVMBasicValType::i64: ty_idx = 3; break;
+    default: return false;
+    }
+
+    using EncodeFnTy = bool (Derived::*)(GenericValuePart &&,
+                                         GenericValuePart &&,
+                                         GenericValuePart &&,
+                                         ValuePart &&);
+    // clang-format off
+
+#define ARRAY_ELEM(vec_width, ty_width, n) &Derived::encode_select_v##vec_width##_##ty_width##_##n
+
+#define ARRAY_ELEMS_2(vec_width, ty_width, one, two)  \
+ARRAY_ELEM(vec_width, ty_width, one),                 \
+ARRAY_ELEM(vec_width, ty_width, two)
+#define ARRAY_ELEMS_4(vec_width, ty_width, one, two, ...) \
+ARRAY_ELEMS_2(vec_width, ty_width, one, two),             \
+ARRAY_ELEMS_2(vec_width, ty_width, __VA_ARGS__)
+#define ARRAY_ELEMS_8(vec_width, ty_width, one, two, three, four, ...) \
+ARRAY_ELEMS_4(vec_width, ty_width, one, two, three, four),             \
+ARRAY_ELEMS_4(vec_width, ty_width, __VA_ARGS__)
+#define ARRAY_ELEMS_16(vec_width, ty_width, one, two, three, four, five, six, seven, eight, ...) \
+ARRAY_ELEMS_8(vec_width, ty_width, one, two, three, four, five, six, seven, eight),              \
+ARRAY_ELEMS_8(vec_width, ty_width, __VA_ARGS__)
+#define ARRAY_ELEMS_32(vec_width, ty_width, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve, thirteen, fourteen, fifteen, sixteen, ...) \
+ARRAY_ELEMS_16(vec_width, ty_width, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve, thirteen, fourteen, fifteen, sixteen),             \
+ARRAY_ELEMS_16(vec_width, ty_width, __VA_ARGS__)
+
+#define ARRAY_ELEMS_32L(ty_width) { ARRAY_ELEMS_32(32, ty_width, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31) }
+#define ARRAY_ELEMS_64L(ty_width) ARRAY_ELEMS_32(64, ty_width, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31)
+#define ARRAY_ELEMS_64U(ty_width) ARRAY_ELEMS_32(64, ty_width, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63)
+#define ARRAY_ELEMS_64(ty_width) { ARRAY_ELEMS_64L(ty_width), ARRAY_ELEMS_64U(ty_width) }
+
+    // clang-format on
+    // Right now, we only support vectors 32 and 64 bits long
+    static constexpr auto fns_v32 = []() {
+      // fns[ty_idx][bit_idx]
+      std::array<std::array<EncodeFnTy, 32>, 4> fns{
+          {ARRAY_ELEMS_32L(i8),
+           ARRAY_ELEMS_32L(i16),
+           ARRAY_ELEMS_32L(i32),
+           ARRAY_ELEMS_32L(i64)}
+      };
+      return fns;
+    }();
+
+    static constexpr auto fns_v64 = []() {
+      // fns[ty_idx][bit_idx]
+      std::array<std::array<EncodeFnTy, 64>, 4> fns{
+          {
+           ARRAY_ELEMS_64(i8),
+           ARRAY_ELEMS_64(i16),
+           ARRAY_ELEMS_64(i32),
+           ARRAY_ELEMS_64(i64),
+           }
+      };
+      return fns;
+    }();
+
+    std::span<const EncodeFnTy> fns;
+    if (nelem == 32) {
+      fns = fns_v32[ty_idx];
+    } else if (nelem == 64) {
+      fns = fns_v64[ty_idx];
+    } else {
+      return false;
+    }
+
+    ValueRef lhs_vr_disowned = lhs.disowned();
+    ValueRef rhs_vr_disowned = rhs.disowned();
+
+    ValuePartRef tmp{this, Config::GP_BANK};
+    ValuePartRef e_lhs{this, LLVMAdaptor::basic_ty_part_bank(elem_ty)};
+    ValuePartRef e_rhs{this, LLVMAdaptor::basic_ty_part_bank(elem_ty)};
+    for (unsigned i = 0; i != nelem; i++) {
+      EncodeFnTy fn = fns[i];
+      derived()->extract_element(lhs_vr_disowned, i, elem_ty, e_lhs);
+      derived()->extract_element(rhs_vr_disowned, i, elem_ty, e_rhs);
+      // Use the select function which checks the ith bit of the packed source
+      // vector
+      (derived()->*fn)(
+          cond_vr.part(0), std::move(e_lhs), std::move(e_rhs), std::move(tmp));
+      derived()->insert_element(res, i, elem_ty, std::move(tmp));
+    }
+    return true;
   }
   default: TPDE_UNREACHABLE("invalid select basic type"); break;
   }

@@ -1044,8 +1044,42 @@ void TARGET_V1 fence_seqcst(void) { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
 // select
 // --------------------------
 
-i32 TARGET_V1 select_i32(u8 cond, i32 val1, i32 val2) { return ((cond & 1) ? val1 : val2); }
-i64 TARGET_V1 select_i64(u8 cond, i64 val1, i64 val2) { return ((cond & 1) ? val1 : val2); }
+#define SELECT_INT_BIT(vec_width, ty_width, n)                                                               \
+ty_width TARGET_V1 select_v##vec_width##_##ty_width##_##n(i##vec_width cond, ty_width val1, ty_width val2) { \
+  return ((cond & (((i##vec_width)1) << n)) ? val1 : val2);                                                  \
+}
+
+#define SELECT_INT_BITS_2(vec_width, ty_width, one, two) \
+SELECT_INT_BIT(vec_width, ty_width, one)                 \
+SELECT_INT_BIT(vec_width, ty_width, two)
+#define SELECT_INT_BITS_4(vec_width, ty_width, one, two, ...) \
+SELECT_INT_BITS_2(vec_width, ty_width, one, two)              \
+SELECT_INT_BITS_2(vec_width, ty_width, __VA_ARGS__)
+#define SELECT_INT_BITS_8(vec_width, ty_width, one, two, three, four, ...) \
+SELECT_INT_BITS_4(vec_width, ty_width, one, two, three, four)              \
+SELECT_INT_BITS_4(vec_width, ty_width, __VA_ARGS__)
+#define SELECT_INT_BITS_16(vec_width, ty_width, one, two, three, four, five, six, seven, eight, ...) \
+SELECT_INT_BITS_8(vec_width, ty_width, one, two, three, four, five, six, seven, eight)               \
+SELECT_INT_BITS_8(vec_width, ty_width, __VA_ARGS__)
+#define SELECT_INT_BITS_32(vec_width, ty_width, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve, thirteen, fourteen, fifteen, sixteen, ...) \
+SELECT_INT_BITS_16(vec_width, ty_width, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve, thirteen, fourteen, fifteen, sixteen)              \
+SELECT_INT_BITS_16(vec_width, ty_width, __VA_ARGS__)
+
+#define SELECT_INT_BITS_32L(ty_width) SELECT_INT_BITS_32(32, ty_width, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31)
+#define SELECT_INT_BITS_64(ty_width)                                                                                                                              \
+SELECT_INT_BITS_32(64, ty_width, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31)            \
+SELECT_INT_BITS_32(64, ty_width, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63)
+
+SELECT_INT_BITS_32L(i8)
+SELECT_INT_BITS_32L(i16)
+SELECT_INT_BITS_32L(i32)
+SELECT_INT_BITS_32L(i64)
+
+SELECT_INT_BITS_64(i8)
+SELECT_INT_BITS_64(i16)
+SELECT_INT_BITS_64(i32)
+SELECT_INT_BITS_64(i64)
+
 i128 TARGET_V1 select_i128(u8 cond, i128 val1, i128 val2) { return ((cond & 1) ? val1 : val2); }
 float TARGET_V1 select_f32(u8 cond, float val1, float val2) { return ((cond & 1) ? val1 : val2); }
 double TARGET_V1 select_f64(u8 cond, double val1, double val2) { return ((cond & 1) ? val1 : val2); }
