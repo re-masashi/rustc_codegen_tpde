@@ -444,10 +444,15 @@ fn main() {
     let mut cmd = Command::new(&llvm_config);
     cmd.arg("--cmakedir");
     let llvm_cmake_dir = output(&mut cmd);
+    #[cfg(debug_assertions)]
+    let build_type = "DEBUG";
+    #[cfg(not(debug_assertions))]
+    let build_type = "RELEASE";
     let tpde_dst = cmake::Config::new("tpde")
         .define("LLVM_DIR", llvm_cmake_dir.trim())
         .define("CMAKE_CXX_COMPILER", "clang++")
         .define("CMAKE_C_COMPILER", "clang")
+        .define("CMAKE_BUILD_TYPE", build_type)
         .generator("Ninja")
         .build();
     // Link TPDE dependencies
@@ -456,6 +461,9 @@ fn main() {
     println!("cargo:rustc-link-search=native={}/build/tpde/deps/fadec", tpde_dst.display());
     println!("cargo:rustc-link-lib=static=fadec");
     println!("cargo:rustc-link-search=native={}/build/tpde/deps/spdlog", tpde_dst.display());
+    #[cfg(debug_assertions)]
+    println!("cargo:rustc-link-lib=static=spdlogd");
+    #[cfg(not(debug_assertions))]
     println!("cargo:rustc-link-lib=static=spdlog");
     // Link TPDE itself
     println!("cargo:rustc-link-search=native={}/build/tpde", tpde_dst.display());

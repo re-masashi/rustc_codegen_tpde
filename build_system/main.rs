@@ -194,7 +194,11 @@ fn main() {
     let cg_tpde_dylib = if let Some(name) = use_backend {
         CodegenBackend::Builtin(name)
     } else {
-        CodegenBackend::Local(build_backend::build_backend(&dirs, &bootstrap_host_compiler))
+        CodegenBackend::Local(build_backend::build_backend(
+            &dirs,
+            &bootstrap_host_compiler,
+            command == Command::Test,
+        ))
     };
     match command {
         Command::Prepare => {
