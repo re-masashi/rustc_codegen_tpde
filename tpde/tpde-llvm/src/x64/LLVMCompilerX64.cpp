@@ -653,6 +653,41 @@ bool LLVMCompilerX64::handle_intrin(const llvm::IntrinsicInst *inst) noexcept {
     this->result_ref(inst).part(0).set_value(dst_ref.part(0));
     return true;
   }
+  case llvm::Intrinsic::x86_sha1msg1: {
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    ASM(SHA1MSG1rr,
+        dst_ref.part(0).load_to_reg(),
+        this->val_ref(inst->getOperand(1)).part(0).load_to_reg());
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_sha1msg2: {
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    ASM(SHA1MSG2rr,
+        dst_ref.part(0).load_to_reg(),
+        this->val_ref(inst->getOperand(1)).part(0).load_to_reg());
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_sha1nexte: {
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    ASM(SHA1NEXTErr,
+        dst_ref.part(0).load_to_reg(),
+        this->val_ref(inst->getOperand(1)).part(0).load_to_reg());
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_sha1rnds4: {
+    auto immediate = llvm::cast<llvm::ConstantInt>(inst->getOperand(2));
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    auto state_ref = this->val_ref(inst->getOperand(1));
+    ASM(SHA1RNDS4rri,
+        dst_ref.part(0).load_to_reg(),
+        state_ref.part(0).load_to_reg(),
+        (u8)immediate->getSExtValue());
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
+    return true;
+  }
   default: return false;
   }
 }
