@@ -688,6 +688,11 @@ bool LLVMCompilerX64::handle_intrin(const llvm::IntrinsicInst *inst) noexcept {
     this->result_ref(inst).part(0).set_value(dst_ref.part(0));
     return true;
   }
+  case llvm::Intrinsic::x86_xgetbv: {
+    derived()->encode_xgetbv(this->val_ref(inst->getOperand(0)).part(0),
+                             this->result_ref(inst).part(0));
+    return true;
+  }
   default: return false;
   }
 }

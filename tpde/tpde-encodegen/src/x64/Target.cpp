@@ -1042,6 +1042,8 @@ void EncodingTargetX64::get_inst_candidates(
     handle_default("UD2");
   } else if (Name == "INT3") {
     handle_default("INT3");
+  } else if (Name == "XGETBV") {
+    handle_default("XGETBV");
   }
 
   handle_rm("TZCNT16rr", "TZCNT16rm", 1, "TZCNT16rr", "TZCNT16rm");

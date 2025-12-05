@@ -1155,6 +1155,8 @@ v16i8 llvm_ssse3_pshufb_128(v16i8, v16i8) __asm__("llvm.x86.ssse3.pshuf.b.128");
 v16i8 ssse3_pshufb_128(v16i8 a, v16i8 b) { return llvm_ssse3_pshufb_128(a, b);}
 v32i8 llvm_avx2_pshufb(v32i8, v32i8) __asm__("llvm.x86.avx2.pshuf.b");
 v32i8 avx2_pshufb(v32i8 a, v32i8 b) { return llvm_avx2_pshufb(a, b);}
+i64 llvm_xgetbv(i32) __asm__("llvm.x86.xgetbv");
+i64 xgetbv(i32 a) { return llvm_xgetbv(a); }
 #endif
 
 // --------------------------
