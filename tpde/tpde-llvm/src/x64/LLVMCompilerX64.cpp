@@ -610,7 +610,6 @@ bool LLVMCompilerX64::handle_intrin(const llvm::IntrinsicInst *inst) noexcept {
                                    this->val_ref(inst->getOperand(1)).part(0),
                                    this->result_ref(inst).part(0));
     return true;
-    return true;
   }
   case llvm::Intrinsic::x86_sse3_ldu_dq: {
     derived()->encode_sse3_ldu_dq(this->val_ref(inst->getOperand(0)).part(0),

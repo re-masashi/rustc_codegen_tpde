@@ -1,0 +1,28 @@
+From 7f67ffda6e76fe761f10316c4b49a0ae577f15c6 Mon Sep 17 00:00:00 2001
+From: TechnoPorg <mail@technop.org>
+Date: Mon, 1 Dec 2025 18:33:52 -0500
+Subject: [PATCH] Disable arch features in dependent crates
+
+---
+ Cargo.toml | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index 2dc2a76..916d0be 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -40,5 +40,11 @@ once_cell = "1"
+ lru = "0.14"
+ ahash = ">=0.8.9"
+ 
++# These patches are all because of inline assembly in transitive dependencies
++[patch.crates-io]
++libm = { git = "https://github.com/TechnoPorg/compiler-builtins.git", rev = "304529647400242739f304a63ad76b463a084614" }
++sha1 = { git = "https://github.com/TechnoPorg/hashes.git", rev = "ef84b8f7a289170588884470dcf958b6e1095888" }
++portable-atomic = { git = "https://github.com/TechnoPorg/portable-atomic.git", rev = "a137064d131b3dca984ec933ca8a339d3c8378c0" }
++
+ [profile.bench]
+ debug = true
+-- 
+2.52.0
+
