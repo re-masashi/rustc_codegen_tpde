@@ -263,7 +263,9 @@ pub(crate) fn run_tests(
         get_default_sysroot(&bootstrap_host_compiler.rustc).join("lib/rustlib/src/rust");
     assert!(stdlib_source.exists());
 
-    if config::get_bool("testsuite.no_sysroot") && !skip_tests.contains(&"testsuite.no_sysroot") {
+    if !config::get_config().skip_tests.contains("testsuite.no_sysroot")
+        && !skip_tests.contains(&"testsuite.no_sysroot")
+    {
         let target_compiler = build_sysroot::build_sysroot(
             dirs,
             SysrootKind::None,
@@ -289,10 +291,11 @@ pub(crate) fn run_tests(
         eprintln!("[SKIP] no_sysroot tests");
     }
 
-    let run_base_sysroot = config::get_bool("testsuite.base_sysroot")
+    let run_base_sysroot = !config::get_config().skip_tests.contains("testsuite.base_sysroot")
         && !skip_tests.contains(&"testsuite.base_sysroot");
-    let run_extended_sysroot = config::get_bool("testsuite.extended_sysroot")
-        && !skip_tests.contains(&"testsuite.extended_sysroot");
+    let run_extended_sysroot =
+        !config::get_config().skip_tests.contains("testsuite.extended_sysroot")
+            && !skip_tests.contains(&"testsuite.extended_sysroot");
 
     if run_base_sysroot || run_extended_sysroot {
         let target_compiler = build_sysroot::build_sysroot(
@@ -363,7 +366,7 @@ impl<'a> TestRunner<'a> {
             let tag = tag.to_uppercase();
             let is_jit_test = tag == "JIT";
 
-            let _guard = if !config::get_bool(config)
+            let _guard = if config::get_config().skip_tests.contains(*config)
                 || (is_jit_test && !self.jit_supported)
                 || self.skip_tests.contains(config)
             {

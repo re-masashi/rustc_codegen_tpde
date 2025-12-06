@@ -1,7 +1,7 @@
 [package]
 name = "y"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [[bin]]
 name = "y"
@@ -18,3 +18,5 @@ debug = 1
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }
 pathsearch = "0.2.0"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.8"

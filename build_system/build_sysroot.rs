@@ -186,7 +186,7 @@ fn build_tpde_sysroot_for_triple(
 
     let build_dir = STANDARD_LIBRARY.target_dir(dirs).join(&compiler.triple).join("release");
 
-    if !config::get_bool("keep_sysroot") {
+    if !config::get_config().keep_sysroot {
         let sysroot_src_orig = get_default_sysroot(&compiler.rustc).join("lib/rustlib/src/rust");
         assert!(sysroot_src_orig.exists());
 

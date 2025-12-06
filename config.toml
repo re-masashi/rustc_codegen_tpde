@@ -1,0 +1,15 @@
+# This file allows configuring the build system.
+
+# The default is to run all tests.
+skip_tests = [
+    # sysroot cannot be built yet due to missing half support
+    "test.sysroot",
+    # JIT mode is not supported yet
+    "jit.mini_core_hello_world",
+    "jit.std_example",
+]
+# Disables cleaning of the sysroot dir. This will cause old compiled artifacts to be re-used when
+# the sysroot source hasn't changed. This is useful when the codegen backend hasn't been modified.
+# This option can be changed while the build system is already running for as long as sysroot
+# building hasn't started yet.
+keep_sysroot = false

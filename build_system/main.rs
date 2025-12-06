@@ -54,6 +54,7 @@ enum Command {
         #[arg(value_enum, long = "sysroot", default_value_t = SysrootKind::Tpde)]
         sysroot_kind: SysrootKind,
         /// Skip testing the TESTNAME test. The test name format is the same as config.txt.
+        #[arg(long)]
         skip_test: Vec<String>,
     },
     /// Test ABI compatibility of rustc_codegen_tpde.
