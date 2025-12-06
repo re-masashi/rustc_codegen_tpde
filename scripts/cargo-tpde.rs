@@ -28,7 +28,12 @@ fn main() {
         cargo
     } else {
         // Ensure that the right toolchain is used
-        env::set_var("RUSTUP_TOOLCHAIN", option_env!("TOOLCHAIN_NAME").expect("TOOLCHAIN_NAME"));
+        unsafe {
+            env::set_var(
+                "RUSTUP_TOOLCHAIN",
+                option_env!("TOOLCHAIN_NAME").expect("TOOLCHAIN_NAME"),
+            );
+        }
         "cargo"
     };
 
@@ -73,6 +78,8 @@ fn main() {
             .chain(rustflags.iter().map(|flag| flag.clone()))
             .collect::<Vec<_>>(),
     );
+
+    panic!("THE CMD IS {cmd:?}");
 
     #[cfg(unix)]
     panic!("Failed to spawn cargo: {}", cmd.exec());

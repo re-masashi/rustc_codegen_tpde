@@ -42,7 +42,12 @@ fn main() {
         rustc
     } else {
         // Ensure that the right toolchain is used
-        env::set_var("RUSTUP_TOOLCHAIN", option_env!("TOOLCHAIN_NAME").expect("TOOLCHAIN_NAME"));
+        unsafe {
+            env::set_var(
+                "RUSTUP_TOOLCHAIN",
+                option_env!("TOOLCHAIN_NAME").expect("TOOLCHAIN_NAME"),
+            );
+        }
         "rustc"
     };
 
