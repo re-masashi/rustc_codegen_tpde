@@ -687,6 +687,39 @@ bool LLVMCompilerX64::handle_intrin(const llvm::IntrinsicInst *inst) noexcept {
     this->result_ref(inst).part(0).set_value(dst_ref.part(0));
     return true;
   }
+  case llvm::Intrinsic::x86_sha256msg1: {
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    ASM(SHA256MSG1rr,
+        dst_ref.part(0).load_to_reg(),
+        this->val_ref(inst->getOperand(1)).part(0).load_to_reg());
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_sha256msg2: {
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    ASM(SHA256MSG2rr,
+        dst_ref.part(0).load_to_reg(),
+        this->val_ref(inst->getOperand(1)).part(0).load_to_reg());
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
+    return true;
+  }
+  case llvm::Intrinsic::x86_sha256rnds2: {
+    auto dst_ref = this->val_ref(inst->getOperand(0));
+    auto state_ref = this->val_ref(inst->getOperand(1));
+    auto round_constants = this->val_ref(inst->getOperand(2));
+    GenericValuePart round_constants_vp = round_constants.part(0);
+    ScratchReg scratch_xmm0{derived()};
+    FixedRegBackup reg_backup_xmm0 = {.scratch = ScratchReg{this}};
+    scratch_alloc_specific(
+        AsmReg::XMM0, scratch_xmm0, {&round_constants_vp}, reg_backup_xmm0);
+    ASM(SHA256RNDS2rrr,
+        dst_ref.part(0).load_to_reg(),
+        state_ref.part(0).load_to_reg(),
+        FeRegXMM{static_cast<u8>(AsmReg::REG::XMM0 & 0x1F)});
+    this->result_ref(inst).part(0).set_value(dst_ref.part(0));
+    scratch_check_fixed_backup(scratch_xmm0, reg_backup_xmm0, false);
+    return true;
+  }
   case llvm::Intrinsic::x86_xgetbv: {
     derived()->encode_xgetbv(this->val_ref(inst->getOperand(0)).part(0),
                              this->result_ref(inst).part(0));
