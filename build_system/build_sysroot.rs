@@ -45,8 +45,7 @@ pub(crate) fn build_sysroot(
             .arg(dirs.source_dir.join("scripts").join(format!("{wrapper}.rs")))
             .arg("-o")
             .arg(&wrapper_path)
-            .arg("-Cstrip=debuginfo")
-            .arg("--check-cfg=cfg(support_panic_unwind)");
+            .arg("-Cstrip=debuginfo");
         if let Some(rustup_toolchain_name) = &rustup_toolchain_name {
             build_cargo_wrapper_cmd
                 .env("TOOLCHAIN_NAME", rustup_toolchain_name)

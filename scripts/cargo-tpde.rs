@@ -13,10 +13,6 @@ fn main() {
     }
 
     let mut rustflags = vec![];
-    if !cfg!(support_panic_unwind) {
-        rustflags.push("-Cpanic=abort".to_owned());
-        rustflags.push("-Zpanic-abort-tests".to_owned());
-    }
     if let Some(name) = option_env!("BUILTIN_BACKEND") {
         rustflags.push(format!("-Zcodegen-backend={name}"));
     } else {
