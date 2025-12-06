@@ -51,6 +51,11 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
         manifest_path = manifest_path.display(),
         target_dir = target_dir.display(),
     );
+    let clif_build_cmd = format!(
+        "RUSTC=rustc CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift cargo +nightly build -Zcodegen-backend --manifest-path {manifest_path} --target-dir {target_dir} && (rm build/raytracer_cg_clif || true) && ln build/simple_raytracer/debug/main build/raytracer_cg_clif",
+        manifest_path = manifest_path.display(),
+        target_dir = target_dir.display(),
+    );
     let tpde_build_cmd = format!(
         "RUSTC={rustc_tpde} CARGO_ENCODED_RUSTFLAGS=\"{rustflags}\" {cargo_tpde} build --manifest-path {manifest_path} --target-dir {target_dir} && (rm build/raytracer_cg_tpde || true) && ln build/simple_raytracer/debug/main build/raytracer_cg_tpde",
         cargo_tpde = cargo_tpde.display(),
@@ -76,6 +81,7 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
         Some(&clean_cmd),
         &[
             ("cargo build", &llvm_build_cmd),
+            ("cargo build (cranelift)", &clif_build_cmd),
             ("cargo-tpde build", &tpde_build_cmd),
             //("cargo-tpde build --release", &tpde_build_opt_cmd),
         ],
@@ -96,6 +102,8 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
 
     let raytracer_cg_llvm =
         Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_llvm", "bin"));
+    let raytracer_cg_clif =
+        Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_clif", "bin"));
     let raytracer_cg_tpde =
         Path::new(".").join(get_file_name(&compiler.rustc, "raytracer_cg_tpde", "bin"));
     /*let raytracer_cg_tpde_opt =
@@ -106,6 +114,7 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
         None,
         &[
             ("", raytracer_cg_llvm.to_str().unwrap()),
+            ("", raytracer_cg_clif.to_str().unwrap()),
             ("", raytracer_cg_tpde.to_str().unwrap()),
             //("", raytracer_cg_tpde_opt.to_str().unwrap()),
         ],

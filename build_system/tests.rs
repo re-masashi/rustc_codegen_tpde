@@ -125,7 +125,7 @@ pub(crate) static PINGORA_REPO: GitRepo = GitRepo::github(
     "cloudflare",
     "pingora",
     "b3c186177e8ff59f047ed05aa7b88735bb623c2f",
-    "5ab217d990a55997",
+    "ece84f0de8b59057",
     "pingora",
 );
 
