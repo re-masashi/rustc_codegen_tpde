@@ -30,15 +30,9 @@ pub(crate) fn build_sysroot(
 
     let is_native = bootstrap_host_compiler.triple == target_triple;
 
-    let cg_tpde_dylib_path = match cg_tpde_dylib_src {
-        CodegenBackend::Local(src_path) => {
-            // Copy the backend
-            let cg_tpde_dylib_path = dist_dir.join("lib").join(src_path.file_name().unwrap());
-            try_hard_link(src_path, &cg_tpde_dylib_path);
-            CodegenBackend::Local(cg_tpde_dylib_path)
-        }
-        CodegenBackend::Builtin(name) => CodegenBackend::Builtin(name.clone()),
-    };
+    // Copy the backend
+    let cg_tpde_dylib_path = dist_dir.join("lib").join(cg_tpde_dylib_src.0.file_name().unwrap());
+    try_hard_link(&cg_tpde_dylib_src.0, &cg_tpde_dylib_path);
 
     // Build and copy rustc and cargo wrappers
     let wrapper_base_name = get_file_name(&bootstrap_host_compiler.rustc, "____", "bin");
@@ -66,9 +60,6 @@ pub(crate) fn build_sysroot(
                 .env("RUSTC", &bootstrap_host_compiler.rustc)
                 .env("RUSTDOC", &bootstrap_host_compiler.rustdoc);
         }
-        if let CodegenBackend::Builtin(name) = cg_tpde_dylib_src {
-            build_cargo_wrapper_cmd.env("BUILTIN_BACKEND", name);
-        }
         spawn_and_wait(build_cargo_wrapper_cmd);
         try_hard_link(wrapper_path, dist_dir.join("bin").join(wrapper_name));
     }
@@ -76,7 +67,7 @@ pub(crate) fn build_sysroot(
     let host = build_sysroot_for_triple(
         dirs,
         bootstrap_host_compiler.clone(),
-        &cg_tpde_dylib_path,
+        &cg_tpde_dylib_src,
         sysroot_kind,
     );
     host.install_into_sysroot(dist_dir);
@@ -90,7 +81,7 @@ pub(crate) fn build_sysroot(
                 bootstrap_target_compiler.set_cross_linker_and_runner();
                 bootstrap_target_compiler
             },
-            &cg_tpde_dylib_path,
+            &cg_tpde_dylib_src,
             sysroot_kind,
         )
         .install_into_sysroot(dist_dir);
@@ -205,14 +196,7 @@ fn build_tpde_sysroot_for_triple(
 
     // Build sysroot
     let mut rustflags = vec!["-Zforce-unstable-if-unmarked".to_owned()];
-    match cg_tpde_dylib_path {
-        CodegenBackend::Local(path) => {
-            rustflags.push(format!("-Zcodegen-backend={}", path.to_str().unwrap()));
-        }
-        CodegenBackend::Builtin(name) => {
-            rustflags.push(format!("-Zcodegen-backend={name}"));
-        }
-    };
+    rustflags.push(format!("-Zcodegen-backend={}", cg_tpde_dylib_path.0.to_str().unwrap()));
     rustflags.push("--sysroot=/dev/null".to_owned());
     rustflags.push("-Copt-level=0".to_owned()); // Disable optimization for sysroot builds for now, as it is not supported by the TPDE backend
 

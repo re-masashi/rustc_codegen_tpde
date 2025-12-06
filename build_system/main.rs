@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 use std::{env, process};
 
+use clap::{Parser, Subcommand, ValueEnum};
+
 use self::utils::Compiler;
 
 mod abi_cafe;
@@ -19,28 +21,56 @@ mod shared_utils;
 mod tests;
 mod utils;
 
-fn usage() {
-    eprintln!("{}", include_str!("usage.txt"));
+/// The build system of rustc_codegen_tpde.
+#[derive(Parser)]
+#[command(about, long_about = None)]
+struct BuildSystem {
+    #[command(subcommand)]
+    command: Command,
+    /// Specify the directory in which the download, build and dist directories are stored.
+    #[arg(default_value = ".", long)]
+    out_dir: String,
+    /// Specify the directory in which the download directory is stored. Overrides --out-dir.
+    #[arg(long)]
+    download_dir: Option<String>,
+    /// Require Cargo.lock and cache are up to date.
+    #[arg(default_value_t = false, long)]
+    frozen: bool,
 }
 
-macro_rules! arg_error {
-    ($($err:tt)*) => {{
-        eprintln!($($err)*);
-        usage();
-        std::process::exit(1);
-    }};
-}
-
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Subcommand)]
 enum Command {
+    /// Download required files for testing.
     Prepare,
-    Build,
-    Test,
-    AbiCafe,
-    Bench,
+    /// Build codegen backend dylib.
+    Build {
+        /// Which sysroot libraries to use.
+        #[arg(value_enum, long = "sysroot", default_value_t = SysrootKind::Tpde)]
+        sysroot_kind: SysrootKind,
+    },
+    /// Run tests.
+    Test {
+        /// Which sysroot libraries to use.
+        #[arg(value_enum, long = "sysroot", default_value_t = SysrootKind::Tpde)]
+        sysroot_kind: SysrootKind,
+        /// Skip testing the TESTNAME test. The test name format is the same as config.txt.
+        skip_test: Vec<String>,
+    },
+    /// Test ABI compatibility of rustc_codegen_tpde.
+    AbiCafe {
+        /// Which sysroot libraries to use.
+        #[arg(value_enum, long = "sysroot", default_value_t = SysrootKind::Tpde)]
+        sysroot_kind: SysrootKind,
+    },
+    /// Test compile and runtime performance of different codegen backends.
+    Bench {
+        /// Which sysroot libraries to use.
+        #[arg(value_enum, long = "sysroot", default_value_t = SysrootKind::Tpde)]
+        sysroot_kind: SysrootKind,
+    },
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, ValueEnum)]
 enum SysrootKind {
     None,
     Tpde,
@@ -48,93 +78,37 @@ enum SysrootKind {
 }
 
 #[derive(Clone, Debug)]
-enum CodegenBackend {
-    Local(PathBuf),
-    Builtin(String),
-}
+struct CodegenBackend(PathBuf);
 
 fn main() {
     if env::var_os("RUST_BACKTRACE").is_none() {
-        env::set_var("RUST_BACKTRACE", "1");
+        unsafe {
+            env::set_var("RUST_BACKTRACE", "1");
+        }
     }
 
     // Force incr comp even in release mode unless in CI or incremental builds are explicitly disabled
     if env::var_os("CARGO_BUILD_INCREMENTAL").is_none() {
-        env::set_var("CARGO_BUILD_INCREMENTAL", "true");
-    }
-
-    let mut args = env::args().skip(1);
-    let command = match args.next().as_deref() {
-        Some("prepare") => Command::Prepare,
-        Some("build") => Command::Build,
-        Some("test") => Command::Test,
-        Some("abi-cafe") => Command::AbiCafe,
-        Some("bench") => Command::Bench,
-        Some(flag) if flag.starts_with('-') => arg_error!("Expected command found flag {}", flag),
-        Some(command) => arg_error!("Unknown command {}", command),
-        None => {
-            usage();
-            process::exit(0);
-        }
-    };
-
-    let mut out_dir = PathBuf::from(".");
-    let mut download_dir = None;
-    let mut sysroot_kind = SysrootKind::Tpde;
-    let mut frozen = false;
-    let mut skip_tests = vec![];
-    let mut use_backend = None;
-    while let Some(arg) = args.next().as_deref() {
-        match arg {
-            "--out-dir" => {
-                out_dir = PathBuf::from(args.next().unwrap_or_else(|| {
-                    arg_error!("--out-dir requires argument");
-                }));
-            }
-            "--download-dir" => {
-                download_dir = Some(PathBuf::from(args.next().unwrap_or_else(|| {
-                    arg_error!("--download-dir requires argument");
-                })));
-            }
-            "--sysroot" => {
-                sysroot_kind = match args.next().as_deref() {
-                    Some("none") => SysrootKind::None,
-                    Some("tpde") => SysrootKind::Tpde,
-                    Some("llvm") => SysrootKind::Llvm,
-                    Some(arg) => arg_error!("Unknown sysroot kind {}", arg),
-                    None => arg_error!("--sysroot requires argument"),
-                }
-            }
-            "--frozen" => frozen = true,
-            "--skip-test" => {
-                // FIXME check that all passed in tests actually exist
-                skip_tests.push(args.next().unwrap_or_else(|| {
-                    arg_error!("--skip-test requires argument");
-                }));
-            }
-            "--use-backend" => {
-                use_backend = Some(match args.next() {
-                    Some(name) => name,
-                    None => arg_error!("--use-backend requires argument"),
-                });
-            }
-            flag if flag.starts_with("-") => arg_error!("Unknown flag {}", flag),
-            arg => arg_error!("Unexpected argument {}", arg),
+        unsafe {
+            env::set_var("CARGO_BUILD_INCREMENTAL", "true");
         }
     }
 
+    let cli = BuildSystem::parse();
     let current_dir = std::env::current_dir().unwrap();
-    out_dir = current_dir.join(out_dir);
+    let out_dir = current_dir.join(cli.out_dir);
+    let download_dir = cli
+        .download_dir
+        .map(|dir| current_dir.join(dir))
+        .unwrap_or_else(|| out_dir.join("download"));
 
-    if command == Command::Prepare {
+    if cli.command == Command::Prepare {
         prepare::prepare(&path::Dirs {
             source_dir: current_dir.clone(),
-            download_dir: download_dir
-                .map(|dir| current_dir.join(dir))
-                .unwrap_or_else(|| out_dir.join("download")),
+            download_dir,
             build_dir: PathBuf::from("dummy_do_not_use"),
             dist_dir: PathBuf::from("dummy_do_not_use"),
-            frozen,
+            frozen: cli.frozen,
         });
         process::exit(0);
     }
@@ -170,12 +144,10 @@ fn main() {
 
     let dirs = path::Dirs {
         source_dir: current_dir.clone(),
-        download_dir: download_dir
-            .map(|dir| current_dir.join(dir))
-            .unwrap_or_else(|| out_dir.join("download")),
+        download_dir,
         build_dir: out_dir.join("build"),
         dist_dir: out_dir.join("dist"),
-        frozen,
+        frozen: cli.frozen,
     };
 
     std::fs::create_dir_all(&dirs.build_dir).unwrap();
@@ -183,39 +155,39 @@ fn main() {
     {
         // Make sure we always explicitly specify the target dir
         let target = dirs.build_dir.join("target_dir_should_be_set_explicitly");
-        env::set_var("CARGO_TARGET_DIR", &target);
+        unsafe {
+            env::set_var("CARGO_TARGET_DIR", &target);
+        }
         let _ = std::fs::remove_file(&target);
         std::fs::File::create(target).unwrap();
     }
 
-    env::set_var("RUSTC", "rustc_should_be_set_explicitly");
-    env::set_var("RUSTDOC", "rustdoc_should_be_set_explicitly");
+    unsafe {
+        env::set_var("RUSTC", "rustc_should_be_set_explicitly");
+        env::set_var("RUSTDOC", "rustdoc_should_be_set_explicitly");
+    }
 
-    let cg_tpde_dylib = if let Some(name) = use_backend {
-        CodegenBackend::Builtin(name)
-    } else {
-        CodegenBackend::Local(build_backend::build_backend(
-            &dirs,
-            &bootstrap_host_compiler,
-            command == Command::Test,
-        ))
-    };
-    match command {
+    let cg_tpde_dylib = CodegenBackend(build_backend::build_backend(
+        &dirs,
+        &bootstrap_host_compiler,
+        matches!(cli.command, Command::Test { sysroot_kind: _, skip_test: _ }),
+    ));
+    match cli.command {
         Command::Prepare => {
             // Handled above
         }
-        Command::Test => {
+        Command::Test { sysroot_kind, skip_test } => {
             tests::run_tests(
                 &dirs,
                 sysroot_kind,
-                &skip_tests.iter().map(|test| &**test).collect::<Vec<_>>(),
+                &skip_test.iter().map(|test| &**test).collect::<Vec<_>>(),
                 &cg_tpde_dylib,
                 &bootstrap_host_compiler,
                 rustup_toolchain_name.as_deref(),
                 target_triple.clone(),
             );
         }
-        Command::AbiCafe => {
+        Command::AbiCafe { sysroot_kind } => {
             if bootstrap_host_compiler.triple != target_triple {
                 eprintln!("Abi-cafe doesn't support cross-compilation");
                 process::exit(1);
@@ -228,7 +200,7 @@ fn main() {
                 &bootstrap_host_compiler,
             );
         }
-        Command::Build => {
+        Command::Build { sysroot_kind } => {
             build_sysroot::build_sysroot(
                 &dirs,
                 sysroot_kind,
@@ -238,7 +210,7 @@ fn main() {
                 target_triple,
             );
         }
-        Command::Bench => {
+        Command::Bench { sysroot_kind } => {
             let compiler = build_sysroot::build_sysroot(
                 &dirs,
                 sysroot_kind,

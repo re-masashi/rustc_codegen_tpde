@@ -58,14 +58,7 @@ pub(crate) fn run(
     }
 
     cmd.arg("--add-rustc-codegen-backend");
-    match cg_tpde_dylib {
-        CodegenBackend::Local(path) => {
-            cmd.arg(format!("cgtpde:{}", path.display()));
-        }
-        CodegenBackend::Builtin(name) => {
-            cmd.arg(format!("cgtpde:{name}"));
-        }
-    }
+    cmd.arg(format!("cgtpde:{}", cg_tpde_dylib.0.display()));
 
     cmd.current_dir(ABI_CAFE.source_dir(dirs));
 
