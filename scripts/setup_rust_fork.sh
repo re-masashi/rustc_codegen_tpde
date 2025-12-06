@@ -8,7 +8,7 @@ export CG_TPDE_FORCE_GNU_AS=1
 # Compiletest expects all standard library paths to start with /rustc/FAKE_PREFIX.
 # CG_TPDE_STDLIB_REMAP_PATH_PREFIX will cause cg_tpde's build system to pass
 # --remap-path-prefix to handle this.
-CG_TPDE_STDLIB_REMAP_PATH_PREFIX=/rustc/FAKE_PREFIX ./y.sh build
+CG_TPDE_STDLIB_REMAP_PATH_PREFIX=/rustc/FAKE_PREFIX ./y.sh build --sysroot llvm
 
 echo "[SETUP] Rust fork"
 git clone --quiet https://github.com/rust-lang/rust.git --filter=tree:0 || true
@@ -20,16 +20,16 @@ git checkout --no-progress "$(rustc -V | cut -d' ' -f3 | tr -d '(')"
 git submodule update --quiet --init src/tools/cargo library/backtrace library/stdarch
 
 git -c user.name=Dummy -c user.email=dummy@example.com -c commit.gpgSign=false \
-    am ../patches/*-stdlib-*.patch
+	am ../patches/*-stdlib-*.patch
 
-cat > config.toml <<EOF
+cat >config.toml <<EOF
 change-id = 999999
 
 [llvm]
 download-ci-llvm = true
 
 [build]
-rustc = "$(pwd)/../dist/bin/rustc-tpde"
+rustc = "$(rustup which rustc)"
 cargo = "$(rustup which cargo)"
 full-bootstrap = true
 local-rebuild = true
@@ -37,7 +37,6 @@ compiletest-allow-stage0 = true
 
 [rust]
 download-rustc = false
-codegen-backends = ["tpde"]
 deny-warnings = false
 verbose-tests = false
 # The cg_tpde sysroot doesn't contain llvm tools and unless llvm_tools is
@@ -45,6 +44,7 @@ verbose-tests = false
 # compiler.
 llvm-tools = false
 std-features = ["panic-unwind"]
+optimize-tests = false
 
 EOF
 
@@ -68,6 +68,39 @@ index a656927b1f6..44fc5546fac 100644
              // If download-ci-llvm=true we also want to check that CI llvm is available
              b && llvm::is_ci_llvm_available_for_target(&dwn_ctx.host_target, asserts)
          }
+EOF
+
+cat <<EOF | git apply -
+diff --git a/src/bootstrap/src/core/build_steps/test.rs b/src/bootstrap/src/core/build_steps/test.rs
+index 9c9bb7cc1ed..dca014b8bcf 100644
+--- a/src/bootstrap/src/core/build_steps/test.rs
++++ b/src/bootstrap/src/core/build_steps/test.rs
+@@ -1825,7 +1825,7 @@ fn run(self, builder: &Builder<'_>) {
+ 
+         cmd.arg("--compile-lib-path").arg(builder.rustc_libdir(test_compiler));
+         cmd.arg("--run-lib-path").arg(builder.sysroot_target_libdir(test_compiler, target));
+-        cmd.arg("--rustc-path").arg(builder.rustc(test_compiler));
++        cmd.arg("--rustc-path").arg("$(realpath $(pwd)/../dist/bin/rustc-tpde)");
+         if let Some(query_compiler) = query_compiler {
+             cmd.arg("--query-rustc-path").arg(builder.rustc(query_compiler));
+         }
+@@ -1957,12 +1957,12 @@ fn run(self, builder: &Builder<'_>) {
+             cmd.arg("--override-codegen-backend").arg(codegen_backend.name());
+             // Tells compiletest which codegen backend to use.
+             // It is used to e.g. ignore tests that don't support that codegen backend.
+-            cmd.arg("--default-codegen-backend").arg(codegen_backend.name());
++            //cmd.arg("--default-codegen-backend").arg(codegen_backend.name());
+         } else {
+             // Tells compiletest which codegen backend to use.
+             // It is used to e.g. ignore tests that don't support that codegen backend.
+-            cmd.arg("--default-codegen-backend")
+-                .arg(builder.config.default_codegen_backend(test_compiler.host).name());
++            //cmd.arg("--default-codegen-backend")
++              //  .arg(builder.config.default_codegen_backend(test_compiler.host).name());
+         }
+         if builder.config.cmd.bypass_ignore_backends() {
+             cmd.arg("--bypass-ignore-backends");
+
 EOF
 
 popd
