@@ -5,7 +5,7 @@ use pathsearch::find_executable_in_path;
 
 use crate::path::{Dirs, RelPath};
 use crate::rustc_info::get_file_name;
-use crate::shared_utils::{rust_linker_flags, rustflags_from_env, rustflags_to_cmd_env};
+use crate::shared_utils::{rustflags_from_config_files, rustflags_from_env, rustflags_to_cmd_env};
 use crate::utils::{CargoProject, Compiler, LogGroup};
 
 static CG_TPDE: CargoProject = CargoProject::new(&RelPath::source("."), "cg_tpde");
@@ -20,7 +20,8 @@ pub(crate) fn build_backend(
     let mut cmd = CG_TPDE.build(bootstrap_host_compiler, dirs, "rustc_codegen_tpde");
 
     let mut rustflags = rustflags_from_env("RUSTFLAGS");
-    rustflags.extend(rust_linker_flags());
+    rustflags
+        .extend(rustflags_from_config_files(&bootstrap_host_compiler.triple, &dirs.source_dir));
     rustflags.push("-Zallow-features=assert_matches,extern_types,file_buffered,if_let_guard,impl_trait_in_assoc_type,iter_intersperse,macro_derive,rustc_private,trim_prefix_suffix,try_blocks".to_owned());
     rustflags_to_cmd_env(&mut cmd, "RUSTFLAGS", &rustflags);
 

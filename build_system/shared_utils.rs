@@ -1,6 +1,7 @@
 // This file is used by both the build system as well as cargo-tpde.rs
 
-include!("../build_system/config.rs");
+use std::path::Path;
+use std::process::Command;
 
 // Adapted from https://github.com/rust-lang/cargo/blob/6dc1deaddf62c7748c9097c7ea88e9ec77ff1a1a/src/cargo/core/compiler/build_context/target_info.rs#L750-L77
 pub(crate) fn rustflags_from_env(kind: &str) -> Vec<String> {
@@ -23,16 +24,29 @@ pub(crate) fn rustflags_from_env(kind: &str) -> Vec<String> {
     Vec::new()
 }
 
-#[allow(unused)]
-pub(crate) fn rust_linker_flags() -> Vec<String> {
-    let mut flags = vec![];
-    if let Some(linker) = get_value("linker") {
-        flags.extend(["-C".to_owned(), format!("linker={linker}")]);
-    }
-    if let Some(ld_path) = get_value("ld-path") {
-        flags.extend(["-C".to_owned(), format!("link-arg=--ld-path={ld_path}")]);
-    }
-    flags
+/// Read rustflags from ~/.cargo/config.toml and .cargo/config.toml
+pub(crate) fn rustflags_from_config_files(target_triple: &str, crate_dir: &Path) -> Vec<String> {
+    let mut cargo_cmd = Command::new("cargo");
+    cargo_cmd
+        .args([
+            "config",
+            "get",
+            "-Zunstable-options",
+            "--format=json-value",
+            &format!("target.{target_triple}.rustflags"),
+        ])
+        .current_dir(crate_dir);
+    let cargo_output_raw = &cargo_cmd.output().unwrap();
+    let cargo_output = String::from_utf8_lossy(&cargo_output_raw.stdout);
+    let rustflags = cargo_output
+        .trim()
+        .strip_prefix('[')
+        .and_then(|rustflags| rustflags.strip_suffix(']'))
+        .map(|rustflags| {
+            rustflags.split(',').map(|flag| flag.trim().trim_matches('"').to_string()).collect()
+        });
+
+    rustflags.unwrap_or_default()
 }
 
 pub(crate) fn rustflags_to_cmd_env(cmd: &mut std::process::Command, kind: &str, flags: &[String]) {

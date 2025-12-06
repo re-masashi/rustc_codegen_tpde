@@ -1,7 +1,6 @@
 use std::env;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
-use std::process::Command;
 
 include!("../build_system/shared_utils.rs");
 
@@ -44,7 +43,7 @@ fn main() {
         args.remove(0);
     }
 
-    let args: Vec<_> = match args.get(0).map(|arg| &**arg) {
+    let args: Vec<String> = match args.get(0).map(|arg| &**arg) {
         Some("jit") => {
             rustflags.push("-Cprefer-dynamic".to_owned());
             args.remove(0);
@@ -60,6 +59,28 @@ fn main() {
         _ => args,
     };
 
+    let target_arg_idx = args.iter().position(|arg| arg.starts_with("--target"));
+    let target = if let Some(idx) = target_arg_idx {
+        if let Some(target) = args.get(idx).unwrap().split("=").skip(1).next() {
+            target
+        } else {
+            args.get(idx + 1).unwrap()
+        }
+    } else {
+        env!("TARGET")
+    };
+    let manifest_path_arg_idx = args.iter().position(|arg| arg.starts_with("--manifest-path"));
+    let manifest_path = if let Some(idx) = manifest_path_arg_idx {
+        if let Some(manifest_path) = args.get(idx).unwrap().split("=").skip(1).next() {
+            manifest_path
+        } else {
+            args.get(idx + 1).unwrap()
+        }
+    } else {
+        "."
+    };
+    let config_file_rustflags = rustflags_from_config_files(target, Path::new(manifest_path));
+
     let mut cmd = Command::new(cargo);
     cmd.args(args);
     rustflags_to_cmd_env(
@@ -68,6 +89,7 @@ fn main() {
         &rustflags_from_env("RUSTFLAGS")
             .into_iter()
             .chain(rustflags.iter().map(|flag| flag.clone()))
+            .chain(config_file_rustflags.clone())
             .collect::<Vec<_>>(),
     );
     rustflags_to_cmd_env(
@@ -76,10 +98,9 @@ fn main() {
         &rustflags_from_env("RUSTDOCFLAGS")
             .into_iter()
             .chain(rustflags.iter().map(|flag| flag.clone()))
+            .chain(config_file_rustflags)
             .collect::<Vec<_>>(),
     );
-
-    panic!("THE CMD IS {cmd:?}");
 
     #[cfg(unix)]
     panic!("Failed to spawn cargo: {}", cmd.exec());

@@ -48,6 +48,8 @@ pub(crate) fn build_sysroot(
             .arg("-Cstrip=debuginfo")
             .arg("--edition")
             .arg("2024");
+
+        build_cargo_wrapper_cmd.env("TARGET", &target_triple);
         if let Some(rustup_toolchain_name) = &rustup_toolchain_name {
             build_cargo_wrapper_cmd
                 .env("TOOLCHAIN_NAME", rustup_toolchain_name)
