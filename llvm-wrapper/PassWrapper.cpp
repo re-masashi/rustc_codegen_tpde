@@ -381,17 +381,6 @@ extern "C" LLVMTargetMachineRef LLVMRustCreateTargetMachine(
   return wrap(TM);
 }
 
-// Unfortunately, the LLVM C API doesn't provide a way to create the
-// TargetLibraryInfo pass, so we use this method to do so.
-extern "C" void LLVMRustAddLibraryInfo(LLVMPassManagerRef PMR, LLVMModuleRef M,
-                                       bool DisableSimplifyLibCalls) {
-  auto TargetTriple = Triple(unwrap(M)->getTargetTriple());
-  auto TLII = TargetLibraryInfoImpl(TargetTriple);
-  if (DisableSimplifyLibCalls)
-    TLII.disableAllFunctions();
-  unwrap(PMR)->add(new TargetLibraryInfoWrapperPass(TLII));
-}
-
 extern "C" void LLVMRustSetLLVMOptions(int Argc, char **Argv) {
   // Initializing the command-line options more than once is not allowed. So,
   // check if they've already been initialized. (This could happen if we're
@@ -421,9 +410,8 @@ static CodeGenFileType fromRust(LLVMRustFileType Type) {
 }
 
 extern "C" LLVMRustResult
-LLVMRustWriteOutputFile(LLVMTargetMachineRef Target, LLVMPassManagerRef PMR,
-                        LLVMModuleRef M, const char *Path, const char *DwoPath,
-                        LLVMRustFileType RustFileType, bool VerifyIR) {
+LLVMRustWriteOutputFile(LLVMModuleRef M, const char *Path, const char *DwoPath,
+                        LLVMRustFileType RustFileType) {
 
   if (DwoPath) {
     LLVMRustSetLastError(
