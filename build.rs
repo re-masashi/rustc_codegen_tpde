@@ -4,6 +4,8 @@ use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use rustc_version::version_meta;
+
 const OPTIONAL_COMPONENTS: &[&str] = &[
     "x86",
     "arm",
@@ -28,16 +30,6 @@ const OPTIONAL_COMPONENTS: &[&str] = &[
 
 const REQUIRED_COMPONENTS: &[&str] =
     &["ipo", "bitreader", "bitwriter", "linker", "asmparser", "lto", "coverage", "instrumentation"];
-
-fn detect_llvm_link() -> (&'static str, &'static str) {
-    // Force the link mode we want, preferring static by default, but
-    // possibly overridden by `configure --enable-llvm-link-shared`.
-    if tracked_env_var_os("LLVM_LINK_SHARED").is_some() {
-        ("dylib", "--link-shared")
-    } else {
-        ("static", "--link-static")
-    }
-}
 
 // Because Cargo adds the compiler's dylib path to our library search path, llvm-config may
 // break: the dylib path for the compiler, as of this writing, contains a copy of the LLVM
@@ -171,6 +163,8 @@ fn main() {
     let mut cfg = cc::Build::new();
     cfg.warnings(false);
 
+    cfg.flag("-fno-rtti");
+
     // Prevent critical warnings when we're compiling from rust-lang/rust CI,
     // except on MSVC, as the compiler throws warnings that are only reported
     // for this platform. See https://github.com/rust-lang/rust/pull/145031#issuecomment-3162677202.
@@ -235,21 +229,6 @@ fn main() {
         .cpp_link_stdlib(None) // we handle this below
         .compile("llvm-wrapper");
 
-    let (llvm_kind, llvm_link_arg) = detect_llvm_link();
-
-    // Link in all LLVM libraries, if we're using the "wrong" llvm-config then
-    // we don't pick up system libs because unfortunately they're for the host
-    // of llvm-config, not the target that we're attempting to link.
-    let mut cmd = Command::new(&llvm_config);
-    cmd.arg(llvm_link_arg).arg("--libs");
-
-    // Don't link system libs if cross-compiling unless targeting Windows from Windows host.
-    // On Windows system DLLs aren't linked directly, instead import libraries are used.
-    // These import libraries are independent of the host.
-    if !is_crossed || target.contains("windows") && host.contains("windows") {
-        cmd.arg("--system-libs");
-    }
-
     // We need libkstat for getHostCPUName on SPARC builds.
     // See also: https://github.com/llvm/llvm-project/issues/64186
     if target.starts_with("sparcv9") && target.contains("solaris") {
@@ -286,60 +265,20 @@ fn main() {
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=execinfo");
     }
-    cmd.args(&components);
 
-    for lib in output(&mut cmd).split_whitespace() {
-        let mut is_static = false;
-        let name = if let Some(stripped) = lib.strip_prefix("-l") {
-            stripped
-        } else if let Some(stripped) = lib.strip_prefix('-') {
-            stripped
-        } else if Path::new(lib).exists() {
-            // On MSVC llvm-config will print the full name to libraries, but
-            // we're only interested in the name part
-            // On Unix when we get a static library llvm-config will print the
-            // full name and we *are* interested in the path, but we need to
-            // handle it separately. For example, when statically linking to
-            // libzstd llvm-config will output something like
-            //   -lrt -ldl -lm -lz /usr/local/lib/libzstd.a -lxml2
-            // and we transform the zstd part into
-            //   cargo:rustc-link-search-native=/usr/local/lib
-            //   cargo:rustc-link-lib=static=zstd
-            let path = Path::new(lib);
-            if lib.ends_with(".a") {
-                is_static = true;
-                println!("cargo:rustc-link-search=native={}", path.parent().unwrap().display());
-                let name = path.file_stem().unwrap().to_str().unwrap();
-                name.trim_start_matches("lib")
-            } else {
-                let name = path.file_name().unwrap().to_str().unwrap();
-                name.trim_end_matches(".lib")
-            }
-        } else if lib.ends_with(".lib") {
-            // Some MSVC libraries just come up with `.lib` tacked on, so chop
-            // that off
-            lib.trim_end_matches(".lib")
-        } else {
-            continue;
-        };
-
-        // Don't need or want this library, but LLVM's CMake build system
-        // doesn't provide a way to disable it, so filter it here even though we
-        // may or may not have built it. We don't reference anything from this
-        // library and it otherwise may just pull in extra dependencies on
-        // libedit which we don't want
-        if name == "LLVMLineEditor" {
-            continue;
-        }
-
-        let kind = if name.starts_with("LLVM") {
-            llvm_kind
-        } else if is_static {
-            "static"
-        } else {
-            "dylib"
-        };
-        println!("cargo:rustc-link-lib={kind}={name}");
+    // Since we're dynamically linking against rustc libraries, we can use the LLVM dylib they bundle
+    // instead of shipping our own.
+    let rustc_llvm_version = version_meta().unwrap().llvm_version.unwrap();
+    let mut llvm_config_version_cmd = Command::new(&llvm_config);
+    let llvm_config_version_output = output(llvm_config_version_cmd.arg("--version"));
+    let mut llvm_config_version =
+        llvm_config_version_output.split(".").map(|component| component.parse().unwrap());
+    if rustc_llvm_version.major != llvm_config_version.next().unwrap()
+        || rustc_llvm_version.minor != llvm_config_version.next().unwrap()
+    {
+        panic!(
+            "llvm_config's LLVM version ({llvm_config_version_output}) does not match rustc's LLVM version ({rustc_llvm_version:?})"
+        );
     }
 
     // LLVM ldflags
@@ -349,7 +288,7 @@ fn main() {
     // hack around this by replacing the host triple with the target and pray
     // that those -L directories are the same!
     let mut cmd = Command::new(&llvm_config);
-    cmd.arg(llvm_link_arg).arg("--ldflags");
+    cmd.arg("--link-shared").arg("--ldflags");
     for lib in output(&mut cmd).split_whitespace() {
         if is_crossed {
             if let Some(stripped) = lib.strip_prefix("-LIBPATH:") {

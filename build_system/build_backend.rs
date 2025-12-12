@@ -31,7 +31,6 @@ pub(crate) fn build_backend(
     }
 
     cmd.env("LLVM_CONFIG", find_executable_in_path("llvm-config").expect("llvm-config not found"));
-    cmd.env("LLVM_LINK_SHARED", "true");
 
     if !debug {
         cmd.arg("--release");
