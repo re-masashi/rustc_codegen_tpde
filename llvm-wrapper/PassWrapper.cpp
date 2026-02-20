@@ -4,6 +4,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/Analysis/Lint.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -41,6 +42,8 @@
 #include "llvm/Transforms/Instrumentation/RealtimeSanitizer.h"
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 #include "llvm/Transforms/Scalar/AnnotationRemarks.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
+#include "llvm/Transforms/Utils/PromoteMemToReg.h"
 #include "llvm/Transforms/Utils/CanonicalizeAliases.h"
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 #include "llvm/Transforms/Utils/NameAnonGlobals.h"
@@ -447,6 +450,31 @@ LLVMRustWriteOutputFile(LLVMModuleRef M, const char *Path, const char *DwoPath,
   OutputFile.close();
 
   return LLVMRustResult::Success;
+}
+
+extern "C" void LLVMRustRunO0Passes(LLVMModuleRef ModuleRef) {
+  Module *TheModule = unwrap(ModuleRef);
+
+  for (Function &F : *TheModule) {
+    if (F.isDeclaration())
+      continue;
+    
+    SmallVector<AllocaInst *> Allocas;
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (auto *AI = dyn_cast<AllocaInst>(&I)) {
+          if (isAllocaPromotable(AI)) {
+            Allocas.push_back(AI);
+          }
+        }
+      }
+    }
+    
+    if (!Allocas.empty()) {
+      DominatorTree DT(F);
+      PromoteMemToReg(Allocas, DT);
+    }
+  }
 }
 
 extern "C" typedef void (*LLVMRustSelfProfileBeforePassCallback)(

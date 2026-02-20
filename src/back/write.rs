@@ -777,6 +777,48 @@ pub(crate) fn optimize(
     // FIXME(ZuseZ4): support SanitizeHWAddress and prevent illegal/unsupported opts
 
     if let Some(opt_level) = config.opt_level {
+        if opt_level == config::OptLevel::No {
+            // Only create thin_lto_buffer if LTO is actually enabled.
+            let lto_enabled = matches!(cgcx.lto, Lto::Thin | Lto::ThinLocal | Lto::Fat);
+            let thin_lto_buffer_needed = lto_enabled
+                && ((module.kind == ModuleKind::Regular
+                    && config.emit_obj == EmitObj::ObjectCode(BitcodeSection::Full))
+                    || config.emit_thin_lto_summary);
+
+            unsafe {
+                llvm::LLVMRustRunO0Passes(module.module_llvm.llmod());
+            }
+
+            if thin_lto_buffer_needed {
+                // Create bitcode buffer for LTO support (without running optimization passes)
+                let thin = ThinBuffer::new(module.module_llvm.llmod(), config.emit_thin_lto);
+                let data = thin.data();
+                module.thin_lto_buffer = Some(data.to_vec());
+
+                if config.emit_thin_lto_summary {
+                    let bc_summary_out = cgcx.output_filenames.temp_path_for_cgu(
+                        OutputType::ThinLinkBitcode,
+                        &module.name,
+                        cgcx.invocation_temp.as_deref(),
+                    );
+                    let summary_data = thin.thin_link_data();
+                    cgcx.prof.artifact_size(
+                        "llvm_bitcode_summary",
+                        bc_summary_out.file_name().unwrap().to_string_lossy(),
+                        summary_data.len() as u64,
+                    );
+                    let _timer = cgcx.prof.generic_activity_with_arg(
+                        "LLVM_module_codegen_emit_bitcode_summary",
+                        &*module.name,
+                    );
+                    if let Err(err) = fs::write(&bc_summary_out, summary_data) {
+                        dcx.emit_err(WriteBytecode { path: &bc_summary_out, err });
+                    }
+                }
+            }
+            return;
+        }
+
         let opt_stage = match cgcx.lto {
             Lto::Fat => llvm::OptStage::PreLinkFatLTO,
             Lto::Thin | Lto::ThinLocal => llvm::OptStage::PreLinkThinLTO,
@@ -902,12 +944,18 @@ pub(crate) fn codegen(
             }
 
             if config.embed_bitcode() && module.kind == ModuleKind::Regular {
-                let _timer = cgcx
-                    .prof
-                    .generic_activity_with_arg("LLVM_module_codegen_embed_bitcode", &*module.name);
-                let thin_bc =
-                    module.thin_lto_buffer.as_deref().expect("cannot find embedded bitcode");
-                embed_bitcode(cgcx, llcx, llmod, &thin_bc);
+                // TPDE: Only embed bitcode if LTO is actually enabled.
+                // This avoids unnecessary work when LTO is disabled.
+                let lto_enabled = matches!(cgcx.lto, Lto::Thin | Lto::ThinLocal | Lto::Fat);
+                if lto_enabled {
+                    let _timer = cgcx.prof.generic_activity_with_arg(
+                        "LLVM_module_codegen_embed_bitcode",
+                        &*module.name,
+                    );
+                    let thin_bc =
+                        module.thin_lto_buffer.as_deref().expect("cannot find embedded bitcode");
+                    embed_bitcode(cgcx, llcx, llmod, &thin_bc);
+                }
             }
         }
 

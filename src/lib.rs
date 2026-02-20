@@ -431,7 +431,10 @@ impl ModuleLlvm {
     fn new(tcx: TyCtxt<'_>, mod_name: &str) -> Self {
         unsafe {
             let llcx = llvm::LLVMContextCreate();
-            llvm::LLVMContextSetDiscardValueNames(llcx, tcx.sess.fewer_names().to_llvm_bool());
+            let opt_level = tcx.backend_optimization_level(());
+            let discard_names =
+                tcx.sess.fewer_names() || opt_level == rustc_session::config::OptLevel::No;
+            llvm::LLVMContextSetDiscardValueNames(llcx, discard_names.to_llvm_bool());
             let llmod_raw = context::create_module(tcx, llcx, mod_name) as *const _;
             ModuleLlvm {
                 llmod_raw,
@@ -444,7 +447,10 @@ impl ModuleLlvm {
     fn new_metadata(tcx: TyCtxt<'_>, mod_name: &str) -> Self {
         unsafe {
             let llcx = llvm::LLVMContextCreate();
-            llvm::LLVMContextSetDiscardValueNames(llcx, tcx.sess.fewer_names().to_llvm_bool());
+            let opt_level = tcx.backend_optimization_level(());
+            let discard_names =
+                tcx.sess.fewer_names() || opt_level == rustc_session::config::OptLevel::No;
+            llvm::LLVMContextSetDiscardValueNames(llcx, discard_names.to_llvm_bool());
             let llmod_raw = context::create_module(tcx, llcx, mod_name) as *const _;
             ModuleLlvm {
                 llmod_raw,

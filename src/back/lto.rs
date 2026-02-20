@@ -594,48 +594,57 @@ pub(crate) fn run_pass_manager(
     let opt_stage = if thin { llvm::OptStage::ThinLTO } else { llvm::OptStage::FatLTO };
     let opt_level = config.opt_level.unwrap_or(config::OptLevel::No);
 
-    // The PostAD behavior is the same that we would have if no autodiff was used.
-    // It will run the default optimization pipeline. If AD is enabled we select
-    // the DuringAD stage, which will disable vectorization and loop unrolling, and
-    // schedule two autodiff optimization + differentiation passes.
-    // We then run the llvm_optimize function a second time, to optimize the code which we generated
-    // in the enzyme differentiation pass.
-    let enable_ad = config.autodiff.contains(&config::AutoDiff::Enable);
-    let enable_gpu = config.offload.contains(&config::Offload::Enable);
-    let stage = if thin {
-        write::AutodiffStage::PreAD
+    // Skip LLVM optimization passes at O0.
+    if opt_level == config::OptLevel::No {
     } else {
-        if enable_ad { write::AutodiffStage::DuringAD } else { write::AutodiffStage::PostAD }
-    };
+        // The PostAD behavior is the same that we would have if no autodiff was used.
+        // It will run the default optimization pipeline. If AD is enabled we select
+        // the DuringAD stage, which will disable vectorization and loop unrolling, and
+        // schedule two autodiff optimization + differentiation passes.
+        // We then run the llvm_optimize function a second time, to optimize the code which we generated
+        // in the enzyme differentiation pass.
+        let enable_ad = config.autodiff.contains(&config::AutoDiff::Enable);
+        let enable_gpu = config.offload.contains(&config::Offload::Enable);
+        let stage = if thin {
+            write::AutodiffStage::PreAD
+        } else {
+            if enable_ad { write::AutodiffStage::DuringAD } else { write::AutodiffStage::PostAD }
+        };
 
-    if enable_ad {
-        enable_autodiff_settings(&config.autodiff);
-    }
-
-    unsafe {
-        write::llvm_optimize(cgcx, dcx, module, None, config, opt_level, opt_stage, stage);
-    }
-
-    // Here we only handle the GPU host (=cpu) code.
-    if enable_gpu && !thin && !cgcx.target_is_like_gpu {
-        let cx =
-            SimpleCx::new(module.module_llvm.llmod(), &module.module_llvm.llcx, cgcx.pointer_size);
-        crate::builder::gpu_offload::handle_gpu_code(cgcx, &cx);
-    }
-
-    if cfg!(feature = "llvm_enzyme") && enable_ad && !thin {
-        let opt_stage = llvm::OptStage::FatLTO;
-        let stage = write::AutodiffStage::PostAD;
-        if !config.autodiff.contains(&config::AutoDiff::NoPostopt) {
-            unsafe {
-                write::llvm_optimize(cgcx, dcx, module, None, config, opt_level, opt_stage, stage);
-            }
+        if enable_ad {
+            enable_autodiff_settings(&config.autodiff);
         }
 
-        // This is the final IR, so people should be able to inspect the optimized autodiff output,
-        // for manual inspection.
-        if config.autodiff.contains(&config::AutoDiff::PrintModFinal) {
-            unsafe { llvm::LLVMDumpModule(module.module_llvm.llmod()) };
+        unsafe {
+            write::llvm_optimize(cgcx, dcx, module, None, config, opt_level, opt_stage, stage);
+        }
+
+        // Here we only handle the GPU host (=cpu) code.
+        if enable_gpu && !thin && !cgcx.target_is_like_gpu {
+            let cx = SimpleCx::new(
+                module.module_llvm.llmod(),
+                &module.module_llvm.llcx,
+                cgcx.pointer_size,
+            );
+            crate::builder::gpu_offload::handle_gpu_code(cgcx, &cx);
+        }
+
+        if cfg!(feature = "llvm_enzyme") && enable_ad && !thin {
+            let opt_stage = llvm::OptStage::FatLTO;
+            let stage = write::AutodiffStage::PostAD;
+            if !config.autodiff.contains(&config::AutoDiff::NoPostopt) {
+                unsafe {
+                    write::llvm_optimize(
+                        cgcx, dcx, module, None, config, opt_level, opt_stage, stage,
+                    );
+                }
+            }
+
+            // This is the final IR, so people should be able to inspect the optimized autodiff output,
+            // for manual inspection.
+            if config.autodiff.contains(&config::AutoDiff::PrintModFinal) {
+                unsafe { llvm::LLVMDumpModule(module.module_llvm.llmod()) };
+            }
         }
     }
 
