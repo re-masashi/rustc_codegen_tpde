@@ -596,6 +596,9 @@ pub(crate) fn run_pass_manager(
 
     // Skip LLVM optimization passes at O0.
     if opt_level == config::OptLevel::No {
+        unsafe {
+            llvm::LLVMRustRunO0Passes(module.module_llvm.llmod());
+        }
     } else {
         // The PostAD behavior is the same that we would have if no autodiff was used.
         // It will run the default optimization pipeline. If AD is enabled we select

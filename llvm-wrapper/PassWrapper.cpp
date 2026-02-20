@@ -458,7 +458,7 @@ extern "C" void LLVMRustRunO0Passes(LLVMModuleRef ModuleRef) {
   for (Function &F : *TheModule) {
     if (F.isDeclaration())
       continue;
-    
+
     SmallVector<AllocaInst *> Allocas;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
@@ -469,7 +469,6 @@ extern "C" void LLVMRustRunO0Passes(LLVMModuleRef ModuleRef) {
         }
       }
     }
-    
     if (!Allocas.empty()) {
       DominatorTree DT(F);
       PromoteMemToReg(Allocas, DT);
