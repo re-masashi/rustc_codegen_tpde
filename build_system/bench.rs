@@ -16,7 +16,7 @@ static SIMPLE_RAYTRACER_REPO: GitRepo = GitRepo::github(
     "<none>",
 );
 
-pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
+pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler, nodebuginfo: bool) {
     if std::process::Command::new("hyperfine").output().is_err() {
         eprintln!("Hyperfine not installed");
         eprintln!("Hint: Try `cargo install hyperfine` to install hyperfine");
@@ -37,7 +37,11 @@ pub(crate) fn benchmark(dirs: &Dirs, compiler: &Compiler) {
     eprintln!("[BENCH COMPILE] ebobby/simple-raytracer");
     let cargo_tpde = &compiler.cargo;
     let rustc_tpde = &compiler.rustc;
-    let rustflags = &compiler.rustflags.join("\x1f");
+    let mut rustflags = compiler.rustflags.clone();
+    if nodebuginfo {
+        rustflags.push("-Cdebuginfo=0".to_string());
+    }
+    let rustflags = &rustflags.join("\x1f");
     let manifest_path = SIMPLE_RAYTRACER_REPO.source_dir().to_path(dirs).join("Cargo.toml");
     let target_dir = dirs.build_dir.join("simple_raytracer");
 

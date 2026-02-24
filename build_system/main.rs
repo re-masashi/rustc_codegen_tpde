@@ -68,6 +68,9 @@ enum Command {
         /// Which sysroot libraries to use.
         #[arg(value_enum, long = "sysroot", default_value_t = SysrootKind::Tpde)]
         sysroot_kind: SysrootKind,
+        /// Disable debuginfo for all backends.
+        #[arg(long = "nodebuginfo", default_value_t = false)]
+        nodebuginfo: bool,
     },
 }
 
@@ -211,7 +214,7 @@ fn main() {
                 target_triple,
             );
         }
-        Command::Bench { sysroot_kind } => {
+        Command::Bench { sysroot_kind, nodebuginfo } => {
             let compiler = build_sysroot::build_sysroot(
                 &dirs,
                 sysroot_kind,
@@ -220,7 +223,7 @@ fn main() {
                 rustup_toolchain_name.as_deref(),
                 target_triple,
             );
-            bench::benchmark(&dirs, &compiler);
+            bench::benchmark(&dirs, &compiler, nodebuginfo);
         }
     }
 }

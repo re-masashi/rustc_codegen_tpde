@@ -8,8 +8,8 @@
 #ifdef _MSC_VER
 #pragma warning(disable : 4530) // C++ exception handler used, but unwind
                                 // semantics are not enabled.
-#pragma warning(                                                               \
-    disable : 4624) // 'xxx': destructor was implicitly defined as deleted
+#pragma warning(disable                                                        \
+                : 4624) // 'xxx': destructor was implicitly defined as deleted
 #pragma warning(                                                               \
     disable : 4244) // conversion from 'xxx' to 'yyy', possible loss of data
 #endif

@@ -1,5 +1,5 @@
-This directory currently contains some LLVM support code. This will generally
-be sent upstream to LLVM in time; for now it lives here.
+This directory currently contains some LLVM support code.This will generally be
+    sent upstream to LLVM in time; for now it lives here.
 
 NOTE: the LLVM C++ ABI is subject to between-version breakage and must *never*
 be exposed to Rust. To allow for easy auditing of that, all Rust-exposed types
