@@ -90,6 +90,18 @@ pub(crate) type SimpleCx<'ll> = GenericCx<'ll, SCx<'ll>>;
 /// All other LLVM data structures in the `CodegenCx` are tied to that `llvm::Context`.
 pub(crate) type CodegenCx<'ll, 'tcx> = GenericCx<'ll, FullCx<'ll, 'tcx>>;
 
+/// Pre-computed LLVM types for common Rust types
+pub(crate) struct CommonTypes<'ll> {
+    pub i8: &'ll Type,
+    pub i16: &'ll Type,
+    pub i32: &'ll Type,
+    pub i64: &'ll Type,
+    pub i128: &'ll Type,
+    pub f32: &'ll Type,
+    pub f64: &'ll Type,
+    pub pointer: &'ll Type,
+}
+
 pub(crate) struct FullCx<'ll, 'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub scx: SimpleCx<'ll>,
@@ -127,6 +139,9 @@ pub(crate) struct FullCx<'ll, 'tcx> {
 
     /// Mapping of scalar types to llvm types.
     pub scalar_lltypes: RefCell<FxHashMap<Ty<'tcx>, &'ll Type>>,
+
+    /// Pre-computed LLVM types for common Rust types
+    pub common_types: CommonTypes<'ll>,
 
     /// Extra per-CGU codegen state needed when coverage instrumentation is enabled.
     pub coverage_cx: Option<coverageinfo::CguCoverageContext<'ll, 'tcx>>,
@@ -596,6 +611,17 @@ impl<'ll, 'tcx> CodegenCx<'ll, 'tcx> {
 
         let (llcx, llmod) = (&*llvm_module.llcx, llvm_module.llmod());
 
+        let common_types = CommonTypes {
+            i8: llvm::LLVMIntTypeInContext(llcx, 8),
+            i16: llvm::LLVMIntTypeInContext(llcx, 16),
+            i32: llvm::LLVMIntTypeInContext(llcx, 32),
+            i64: llvm::LLVMIntTypeInContext(llcx, 64),
+            i128: llvm::LLVMIntTypeInContext(llcx, 128),
+            f32: unsafe { llvm::LLVMFloatTypeInContext(llcx) },
+            f64: unsafe { llvm::LLVMDoubleTypeInContext(llcx) },
+            pointer: llvm::LLVMPointerTypeInContext(llcx, 0),
+        };
+
         let coverage_cx =
             tcx.sess.instrument_coverage().then(coverageinfo::CguCoverageContext::new);
 
@@ -627,6 +653,7 @@ impl<'ll, 'tcx> CodegenCx<'ll, 'tcx> {
                 compiler_used_statics: Default::default(),
                 type_lowering: Default::default(),
                 scalar_lltypes: Default::default(),
+                common_types,
                 coverage_cx,
                 dbg_cx,
                 eh_personality: Cell::new(None),

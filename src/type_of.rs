@@ -206,8 +206,23 @@ impl<'tcx> LayoutLlvmExt<'tcx> for TyAndLayout<'tcx> {
         // In other words, this should generally not look at the type at all, but only at the
         // layout.
         if let BackendRepr::Scalar(scalar) = self.backend_repr {
-            // Use a different cache for scalars because pointers to DSTs
-            // can be either wide or thin (data pointers of wide pointers).
+            let cached_llty = match self.ty.kind() {
+                ty::Int(rustc_middle::ty::IntTy::I8) => Some(cx.common_types.i8),
+                ty::Int(rustc_middle::ty::IntTy::I16) => Some(cx.common_types.i16),
+                ty::Int(rustc_middle::ty::IntTy::I32) => Some(cx.common_types.i32),
+                ty::Int(rustc_middle::ty::IntTy::I64) => Some(cx.common_types.i64),
+                ty::Int(rustc_middle::ty::IntTy::I128) => Some(cx.common_types.i128),
+                ty::Float(rustc_middle::ty::FloatTy::F32) => Some(cx.common_types.f32),
+                ty::Float(rustc_middle::ty::FloatTy::F64) => Some(cx.common_types.f64),
+                ty::RawPtr(_, _) | ty::Ref(..) => Some(cx.common_types.pointer),
+                // Fall through to HashMap for uncommon types
+                _ => None,
+            };
+
+            if let Some(llty) = cached_llty {
+                return llty;
+            }
+
             if let Some(&llty) = cx.scalar_lltypes.borrow().get(&self.ty) {
                 return llty;
             }
