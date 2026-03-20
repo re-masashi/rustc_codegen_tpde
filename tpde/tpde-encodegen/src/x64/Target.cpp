@@ -778,6 +778,8 @@ void EncodingTargetX64::get_inst_candidates(
   case_default("MOVMSKPSrr", -1, "SSE_MOVMSKPSrr");
   case_default("MOVMSKPDrr", -1, "SSE_MOVMSKPDrr");
 
+  case_default("RDTSC", -1, "RDTSC");
+
   case_default("MFENCE", -1, "MFENCE");
 
   handle_ri("BT16rr", "BT16ri8", 1, -1, "BT16rr", "BT16ri");

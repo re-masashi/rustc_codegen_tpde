@@ -378,7 +378,10 @@ OF_OPS(64)
 // 128-bit mul-overflow is inlined on x86-64, but not on AArch64. Furthermore,
 // on AArch64, there is no calling convention to return more than two registers
 // (LLVM supports this, but Clang doesn't, because it follows the AAPCS ABI).
-// Therefore, these are implemented in encode_template.ll to bypass clang.
+// Therefore, code these manually for AArch64.
+#if defined(__x86_64__)
+OF_OPS(128)
+#endif
 
 #undef OF_OPS
 #undef OF_OP
@@ -1175,3 +1178,5 @@ void prefetch_wl0(void* addr) { __builtin_prefetch(addr, 1, 0); }
 void prefetch_wl1(void* addr) { __builtin_prefetch(addr, 1, 1); }
 void prefetch_wl2(void* addr) { __builtin_prefetch(addr, 1, 2); }
 void prefetch_wl3(void* addr) { __builtin_prefetch(addr, 1, 3); }
+
+u64 TARGET_V1 readcyclecounter(void) { return __builtin_readcyclecounter(); }

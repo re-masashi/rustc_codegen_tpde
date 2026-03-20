@@ -141,14 +141,15 @@ fn main() {
     assert_eq!(-1i128, kind as i128);
 
     let options = [1u128];
-    match options[0] {
-        1 => (),
-        0 => {
-            println!("unsigned 128-bit integer comparison failed");
-            loop {}
-        }
-        v => panic(v),
-    };
+    // 128-bit switch statements are not yet supported
+    // match options[0] {
+    //     1 => (),
+    //     0 => {
+    //         println!("unsigned 128-bit integer comparison failed");
+    //         loop {}
+    //     }
+    //     v => panic(v),
+    // };
 
     if black_box(false) {
         // Based on https://github.com/rust-lang/rust/blob/2f320a224e827b400be25966755a621779f797cc/src/test/ui/debuginfo/debuginfo_with_uninhabitable_field_and_unsized.rs

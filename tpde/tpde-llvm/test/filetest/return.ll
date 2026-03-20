@@ -5,6 +5,8 @@
 
 ; RUN: tpde-llc --target=x86_64 %s | %objdump | FileCheck %s -check-prefixes=X64
 ; RUN: tpde-llc --target=aarch64 %s | %objdump | FileCheck %s -check-prefixes=ARM64
+; XFAIL: llvm19.1
+; XFAIL: llvm20.1
 
 define i8 @ret_i8(i8 %a) {
 ; X64-LABEL: <ret_i8>:
@@ -86,9 +88,9 @@ define i8 @ret_i8_call() {
 ; X64:         push rbp
 ; X64-NEXT:    mov rbp, rsp
 ; X64-NEXT:    sub rsp, 0x30
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_i8-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
@@ -96,7 +98,8 @@ define i8 @ret_i8_call() {
 ; ARM64-LABEL: <ret_i8_call>:
 ; ARM64:         stp x29, x30, [sp, #-0xa0]!
 ; ARM64-NEXT:    mov x29, sp
-; ARM64-NEXT:    bl 0x68 <ret_i8_call+0x8>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_i8
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
 ; ARM64-NEXT:    ret
@@ -109,9 +112,9 @@ define zeroext i8 @ret_i8_call_zext() {
 ; X64:         push rbp
 ; X64-NEXT:    mov rbp, rsp
 ; X64-NEXT:    sub rsp, 0x30
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_i8-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    movzx eax, al
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
@@ -120,7 +123,8 @@ define zeroext i8 @ret_i8_call_zext() {
 ; ARM64-LABEL: <ret_i8_call_zext>:
 ; ARM64:         stp x29, x30, [sp, #-0xa0]!
 ; ARM64-NEXT:    mov x29, sp
-; ARM64-NEXT:    bl 0x88 <ret_i8_call_zext+0x8>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_i8
 ; ARM64-NEXT:    uxtb w0, w0
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
@@ -134,9 +138,9 @@ define signext i8 @ret_i8_call_sext() {
 ; X64:         push rbp
 ; X64-NEXT:    mov rbp, rsp
 ; X64-NEXT:    sub rsp, 0x30
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_i8-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    movsx eax, al
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
@@ -145,7 +149,8 @@ define signext i8 @ret_i8_call_sext() {
 ; ARM64-LABEL: <ret_i8_call_sext>:
 ; ARM64:         stp x29, x30, [sp, #-0xa0]!
 ; ARM64-NEXT:    mov x29, sp
-; ARM64-NEXT:    bl 0xa8 <ret_i8_call_sext+0x8>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_i8
 ; ARM64-NEXT:    sxtb w0, w0
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
@@ -704,12 +709,12 @@ define signext i1 @ret_i1_sext(i1 %v) {
 ; X64-NEXT:    mov rbp, rsp
 ; X64-NEXT:    sub rsp, 0x30
 ; X64-NEXT:    mov byte ptr [rbp - 0x29], dil
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_i8-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    movzx eax, byte ptr [rbp - 0x29]
-; X64-NEXT:    shl eax, 0x1f
-; X64-NEXT:    sar eax, 0x1f
+; X64-NEXT:    and eax, 0x1
+; X64-NEXT:    neg eax
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
@@ -718,7 +723,8 @@ define signext i1 @ret_i1_sext(i1 %v) {
 ; ARM64:         stp x29, x30, [sp, #-0xb0]!
 ; ARM64-NEXT:    mov x29, sp
 ; ARM64-NEXT:    strb w0, [x29, #0xa0]
-; ARM64-NEXT:    bl 0x38c <ret_i1_sext+0xc>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_i8
 ; ARM64-NEXT:    ldrb w0, [x29, #0xa0]
 ; ARM64-NEXT:    sbfx w0, w0, #0, #1

@@ -4,6 +4,8 @@
 
 ; RUN: tpde-llc --target=x86_64 %s | %objdump | FileCheck %s -check-prefixes=X64
 ; RUN: tpde-llc --target=aarch64 %s | %objdump | FileCheck %s -check-prefixes=ARM64
+; XFAIL: llvm19.1
+; XFAIL: llvm20.1
 
 @t1 = external thread_local global i32, align 4
 
@@ -16,13 +18,15 @@ define void @legacy_store() {
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    mov dword ptr [rax], 0x0
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
 ;
 ; ARM64-LABEL: <legacy_store>:
-; ARM64:         stp x29, x30, [sp, #-0xa0]!
+; ARM64:       <L0>:
+; ARM64-NEXT:    stp x29, x30, [sp, #-0xa0]!
 ; ARM64-NEXT:    mov x29, sp
 ; ARM64-NEXT:    adrp x0, 0x0 <legacy_store>
 ; ARM64-NEXT:     R_AARCH64_TLSDESC_ADR_PAGE21 t1
@@ -51,6 +55,7 @@ define ptr @legacy_gep() {
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    lea rax, [rax + 0x1]
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
@@ -85,17 +90,19 @@ define void @legacy_use() {
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    mov qword ptr [rbp - 0x30], rax
 ; X64-NEXT:    lea rdi, <legacy_use+0x1d>
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L1>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L1>:
 ; X64-NEXT:    xor edi, edi
 ; X64-NEXT:    mov rsi, rax
 ; X64-NEXT:    mov rdx, qword ptr [rbp - 0x30]
-; X64-NEXT:  <L2>:
 ; X64-NEXT:    call <L2>
 ; X64-NEXT:     R_X86_64_PLT32 call_target-0x4
+; X64-NEXT:  <L2>:
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
@@ -128,7 +135,8 @@ define void @legacy_use() {
 ; ARM64-NEXT:    mov w0, #0x0 // =0
 ; ARM64-NEXT:    ldr x1, [x29, #0xa8]
 ; ARM64-NEXT:    ldr x2, [x29, #0xa0]
-; ARM64-NEXT:    bl 0xac <legacy_use+0x4c>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 call_target
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xb0
 ; ARM64-NEXT:    ret

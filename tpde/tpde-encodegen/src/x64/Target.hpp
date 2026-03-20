@@ -39,7 +39,7 @@ struct EncodingTargetX64 : EncodingTarget {
   }
 
   bool reg_is_gp(const llvm::Register reg) const {
-    assert(reg.isPhysical() || true); // temporary hack
+    assert(reg.isPhysical());
     const auto *target_reg_info = func->getSubtarget().getRegisterInfo();
     return target_reg_info->isGeneralPurposeRegister(*func, reg);
   }
