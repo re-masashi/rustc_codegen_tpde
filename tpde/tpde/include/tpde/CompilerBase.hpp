@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <tuple>
 #include <unordered_map>
 #include <variant>
 
@@ -19,7 +18,6 @@
 #include "tpde/ValLocalIdx.hpp"
 #include "tpde/ValueAssignment.hpp"
 #include "tpde/base.hpp"
-#include "tpde/util/SmallVector.hpp"
 #include "tpde/util/function_ref.hpp"
 #include "tpde/util/misc.hpp"
 
@@ -80,19 +78,19 @@ class CCAssigner {
 public:
   const CCInfo *ccinfo;
 
-  CCAssigner(const CCInfo &ccinfo) noexcept : ccinfo(&ccinfo) {}
-  virtual ~CCAssigner() noexcept {}
+  CCAssigner(const CCInfo &ccinfo) : ccinfo(&ccinfo) {}
+  virtual ~CCAssigner() {}
 
-  virtual void reset() noexcept = 0;
+  virtual void reset() = 0;
 
-  const CCInfo &get_ccinfo() const noexcept { return *ccinfo; }
+  const CCInfo &get_ccinfo() const { return *ccinfo; }
 
-  virtual void assign_arg(CCAssignment &cca) noexcept = 0;
-  virtual u32 get_stack_size() noexcept = 0;
+  virtual void assign_arg(CCAssignment &cca) = 0;
+  virtual u32 get_stack_size() = 0;
   /// Some calling conventions need different call behavior when calling a
   /// vararg function.
-  virtual bool is_vararg() const noexcept { return false; }
-  virtual void assign_ret(CCAssignment &cca) noexcept = 0;
+  virtual bool is_vararg() const { return false; }
+  virtual void assign_ret(CCAssignment &cca) = 0;
 };
 
 /// The base class for the compiler.
@@ -131,7 +129,9 @@ struct CompilerBase {
     /// The current size of the stack frame
     u32 frame_size = 0;
     /// Whether the stack frame might have dynamic alloca. Dynamic allocas may
-    /// require a different and less efficient frame setup.
+    /// require a different and less efficient frame setup. As static allocas
+    /// can be converted into dynamic allocas, this is only valid after static
+    /// allocas were processed.
     bool has_dynamic_alloca;
     /// Whether the function is guaranteed to be a leaf function. Throughout the
     /// entire function, the compiler may assume the absence of function calls.
@@ -248,44 +248,42 @@ public:
 
     RegisterFile::RegBitSet arg_regs{};
 
-    CallBuilderBase(Derived &compiler, CCAssigner &assigner) noexcept
+    CallBuilderBase(Derived &compiler, CCAssigner &assigner)
         : compiler(compiler), assigner(assigner) {}
 
     // CBDerived needs:
-    // void add_arg_byval(ValuePart &vp, CCAssignment &cca) noexcept;
-    // void add_arg_stack(ValuePart &vp, CCAssignment &cca) noexcept;
-    // void call_impl(std::variant<SymRef, ValuePart> &&) noexcept;
-    CBDerived *derived() noexcept { return static_cast<CBDerived *>(this); }
+    // void add_arg_byval(ValuePart &vp, CCAssignment &cca);
+    // void add_arg_stack(ValuePart &vp, CCAssignment &cca);
+    // void call_impl(std::variant<SymRef, ValuePart> &&);
+    CBDerived *derived() { return static_cast<CBDerived *>(this); }
 
   public:
     /// Add a value part as argument. cca must be populated with information
     /// about the argument, except for the reg/stack_off, which are set by the
     /// CCAssigner. If no register bank is assigned, the register bank and size
     /// are retrieved from the value part, otherwise, the size must be set, too.
-    void add_arg(ValuePart &&vp, CCAssignment cca) noexcept;
+    void add_arg(ValuePart &&vp, CCAssignment cca);
     /// Add a full IR value as argument, with an explicit number of parts.
     /// Values are decomposed into their parts and are typically either fully
     /// in registers or fully on the stack (except CallArg::Flag::allow_split).
-    void add_arg(const CallArg &arg, u32 part_count) noexcept;
+    void add_arg(const CallArg &arg, u32 part_count);
     /// Add a full IR value as argument. The number of value parts must be
     /// exposed via val_parts. Values are decomposed into their parts and are
     /// typically either fully in registers or fully on the stack (except
     /// CallArg::Flag::allow_split).
-    void add_arg(const CallArg &arg) noexcept {
+    void add_arg(const CallArg &arg) {
       add_arg(std::move(arg), compiler.val_parts(arg.value).count());
     }
 
     /// Generate the function call (evict registers, call, reset stack frame).
-    void call(std::variant<SymRef, ValuePart>) noexcept;
+    void call(std::variant<SymRef, ValuePart>);
 
     /// Assign next return value part to vp.
-    void add_ret(ValuePart &vp, CCAssignment cca) noexcept;
+    void add_ret(ValuePart &vp, CCAssignment cca);
     /// Assign next return value part to vp.
-    void add_ret(ValuePart &&vp, CCAssignment cca) noexcept {
-      add_ret(vp, cca);
-    }
+    void add_ret(ValuePart &&vp, CCAssignment cca) { add_ret(vp, cca); }
     /// Assign return values to the IR value.
-    void add_ret(ValueRef &vr) noexcept;
+    void add_ret(ValueRef &vr);
   };
 
   class RetBuilder {
@@ -295,15 +293,15 @@ public:
     RegisterFile::RegBitSet ret_regs{};
 
   public:
-    RetBuilder(Derived &compiler, CCAssigner &assigner) noexcept
+    RetBuilder(Derived &compiler, CCAssigner &assigner)
         : compiler(compiler), assigner(assigner) {
       assigner.reset();
     }
 
-    void add(ValuePart &&vp, CCAssignment cca) noexcept;
-    void add(IRValueRef val) noexcept;
+    void add(ValuePart &&vp, CCAssignment cca);
+    void add(IRValueRef val);
 
-    void ret() noexcept;
+    void ret();
   };
 
   /// Initialize a CompilerBase, should be called by the derived classes
@@ -319,12 +317,11 @@ public:
 
   const Derived *derived() const { return static_cast<const Derived *>(this); }
 
-  [[nodiscard]] ValLocalIdx val_idx(const IRValueRef value) const noexcept {
+  [[nodiscard]] ValLocalIdx val_idx(const IRValueRef value) const {
     return analyzer.adaptor->val_local_idx(value);
   }
 
-  [[nodiscard]] ValueAssignment *
-      val_assignment(const ValLocalIdx idx) noexcept {
+  [[nodiscard]] ValueAssignment *val_assignment(const ValLocalIdx idx) {
     return assignments.value_ptrs[static_cast<u32>(idx)];
   }
 
@@ -341,23 +338,23 @@ public:
   void reset();
 
   /// Get CCAssigner for current function.
-  CCAssigner *cur_cc_assigner() noexcept { return &default_cc_assigner; }
+  CCAssigner *cur_cc_assigner() { return &default_cc_assigner; }
 
-  void init_assignment(IRValueRef value, ValLocalIdx local_idx) noexcept;
+  void init_assignment(IRValueRef value, ValLocalIdx local_idx);
 
 private:
   /// Frees an assignment, its stack slot and registers
-  void free_assignment(ValLocalIdx local_idx, ValueAssignment *) noexcept;
+  void free_assignment(ValLocalIdx local_idx, ValueAssignment *);
 
 public:
   /// Release an assignment when reference count drops to zero, either frees
   /// the assignment immediately or delays free to the end of the live range.
-  void release_assignment(ValLocalIdx local_idx, ValueAssignment *) noexcept;
+  void release_assignment(ValLocalIdx local_idx, ValueAssignment *);
 
   /// Init a variable-ref assignment
-  void init_variable_ref(ValLocalIdx local_idx, u32 var_ref_data) noexcept;
+  void init_variable_ref(ValLocalIdx local_idx, u32 var_ref_data);
   /// Init a variable-ref assignment
-  void init_variable_ref(IRValueRef value, u32 var_ref_data) noexcept {
+  void init_variable_ref(IRValueRef value, u32 var_ref_data) {
     init_variable_ref(adaptor->val_local_idx(value), var_ref_data);
   }
 
@@ -365,9 +362,9 @@ public:
   /// @{
 
   /// Allocate a static stack slot.
-  i32 allocate_stack_slot(u32 size) noexcept;
+  i32 allocate_stack_slot(u32 size);
   /// Free a static stack slot.
-  void free_stack_slot(u32 slot, u32 size) noexcept;
+  void free_stack_slot(u32 slot, u32 size);
 
   /// @}
 
@@ -380,93 +377,96 @@ public:
                            u32 arg_idx,
                            IRValueRef arg,
                            u32 align = 1,
-                           bool allow_split = false) noexcept;
+                           bool allow_split = false);
 
   /// \name Value References
   /// @{
 
   /// Get a using reference to a value.
-  ValueRef val_ref(IRValueRef value) noexcept;
+  ValueRef val_ref(IRValueRef value);
 
   /// Get a using reference to a single-part value and provide direct access to
   /// the only part. This is a convenience function; note that the ValueRef must
   /// outlive the ValuePartRef (i.e. auto p = val_ref().part(0); won't work, as
   /// the value will possibly be deallocated when the ValueRef is destroyed).
-  std::pair<ValueRef, ValuePartRef> val_ref_single(IRValueRef value) noexcept;
+  std::pair<ValueRef, ValuePartRef> val_ref_single(IRValueRef value);
 
   /// Get a defining reference to a value.
-  ValueRef result_ref(IRValueRef value) noexcept;
+  ValueRef result_ref(IRValueRef value);
 
   /// Get a defining reference to a single-part value and provide direct access
   /// to the only part. Similar to val_ref_single().
-  std::pair<ValueRef, ValuePartRef>
-      result_ref_single(IRValueRef value) noexcept;
+  std::pair<ValueRef, ValuePartRef> result_ref_single(IRValueRef value);
 
   /// Make dst an alias for src, which must be a non-constant value with an
   /// identical part configuration. src must be in its last use (is_owned()),
   /// and the assignment will be repurposed for dst, keeping all assigned
   /// registers and stack slots.
-  ValueRef result_ref_alias(IRValueRef dst, ValueRef &&src) noexcept;
+  ValueRef result_ref_alias(IRValueRef dst, ValueRef &&src);
 
   /// Initialize value as a pointer into a stack variable (i.e., a value
   /// allocated from cur_static_allocas() or similar) with an offset. The
   /// result value will be a stack variable itself.
-  ValueRef result_ref_stack_slot(IRValueRef value,
-                                 AssignmentPartRef base,
-                                 i32 off) noexcept;
+  ValueRef
+      result_ref_stack_slot(IRValueRef value, AssignmentPartRef base, i32 off);
 
   /// @}
 
   [[deprecated("Use ValuePartRef::set_value")]]
-  void set_value(ValuePartRef &val_ref, ScratchReg &scratch) noexcept;
+  void set_value(ValuePartRef &val_ref, ScratchReg &scratch);
   [[deprecated("Use ValuePartRef::set_value")]]
-  void set_value(ValuePartRef &&val_ref, ScratchReg &scratch) noexcept {
+  void set_value(ValuePartRef &&val_ref, ScratchReg &scratch) {
     set_value(val_ref, scratch);
   }
 
   /// Get generic value part into a single register, evaluating expressions
   /// and materializing immediates as required.
-  AsmReg gval_as_reg(GenericValuePart &gv) noexcept;
+  AsmReg gval_as_reg(GenericValuePart &gv);
 
   /// Like gval_as_reg; if the GenericValuePart owns a reusable register
   /// (either a ScratchReg, possibly due to materialization, or a reusable
   /// ValuePartRef), store it in dst.
-  AsmReg gval_as_reg_reuse(GenericValuePart &gv, ScratchReg &dst) noexcept;
+  AsmReg gval_as_reg_reuse(GenericValuePart &gv, ScratchReg &dst);
+
+  /// Like gval_as_reg; if the GenericValuePart owns a reusable register
+  /// (either a ScratchReg, possibly due to materialization, or a reusable
+  /// ValuePartRef), store it in dst.
+  AsmReg gval_as_reg_reuse(GenericValuePart &gv, ValuePart &dst);
 
 private:
   /// @internal Select register when a value needs to be evicted.
-  Reg select_reg_evict(RegBank bank, u64 exclusion_mask) noexcept;
+  Reg select_reg_evict(RegBank bank);
 
 public:
   /// \name Low-Level Assignment Register Handling
   /// @{
 
   /// Select an available register, evicting loaded values if needed.
-  Reg select_reg(RegBank bank, u64 exclusion_mask) noexcept {
-    Reg res = register_file.find_first_free_excluding(bank, exclusion_mask);
+  Reg select_reg(RegBank bank) {
+    Reg res = register_file.find_first_free_excluding(bank, 0);
     if (res.valid()) [[likely]] {
       return res;
     }
-    return select_reg_evict(bank, exclusion_mask);
+    return select_reg_evict(bank);
   }
 
   /// Reload a value part from memory or recompute variable address.
-  void reload_to_reg(AsmReg dst, AssignmentPartRef ap) noexcept;
+  void reload_to_reg(AsmReg dst, AssignmentPartRef ap);
 
   /// Allocate a stack slot for an assignment.
-  void allocate_spill_slot(AssignmentPartRef ap) noexcept;
+  void allocate_spill_slot(AssignmentPartRef ap);
 
   /// Ensure the value is spilled in its stack slot (except variable refs).
-  void spill(AssignmentPartRef ap) noexcept;
+  void spill(AssignmentPartRef ap);
 
   /// Evict the value from its register, spilling if needed, and free register.
-  void evict(AssignmentPartRef ap) noexcept;
+  void evict(AssignmentPartRef ap);
 
   /// Evict the value from the register, spilling if needed, and free register.
-  void evict_reg(Reg reg) noexcept;
+  void evict_reg(Reg reg);
 
   /// Free the register. Requires that the contained value is already spilled.
-  void free_reg(Reg reg) noexcept;
+  void free_reg(Reg reg);
 
   /// @}
 
@@ -476,24 +476,22 @@ public:
   /// Generate an unconditional branch at the end of a basic block. No further
   /// instructions must follow. If target is the next block in the block order,
   /// the branch is omitted.
-  void generate_uncond_branch(IRBlockRef target) noexcept;
+  void generate_uncond_branch(IRBlockRef target);
 
   /// Generate an conditional branch at the end of a basic block.
   template <typename Jump>
   void generate_cond_branch(Jump jmp,
                             IRBlockRef true_target,
-                            IRBlockRef false_target) noexcept;
+                            IRBlockRef false_target);
 
   /// Generate a switch at the end of a basic block. Only the lowest bits of the
   /// condition are considered. The condition must be a general-purpose
   /// register. The cases must be sorted and every case value must appear at
   /// most once.
-  void generate_switch(
-      tpde::util::SmallVector<ScratchReg, 1> &&conds,
-      u32 width,
-      IRBlockRef default_block,
-      std::span<const std::pair<tpde::util::SmallVector<u64, 1>, IRBlockRef>>
-          cases) noexcept;
+  void generate_switch(ScratchReg &&cond,
+                       u32 width,
+                       IRBlockRef default_block,
+                       std::span<const std::pair<u64, IRBlockRef>> cases);
 
   /// @}
 
@@ -511,18 +509,18 @@ public:
   /// of registers that will be free'd at the end of the block; pass this to
   /// release_spilled_regs().
   typename RegisterFile::RegBitSet
-      spill_before_branch(bool force_spill = false) noexcept;
+      spill_before_branch(bool force_spill = false);
   /// Free registers marked by spill_before_branch().
-  void release_spilled_regs(typename RegisterFile::RegBitSet) noexcept;
+  void release_spilled_regs(typename RegisterFile::RegBitSet);
 
   /// When reaching a point in the function where no other blocks will be
   /// reached anymore, use this function to release register assignments after
   /// the end of that block so the compiler does not accidentally use
   /// registers which don't contain any values
-  void release_regs_after_return() noexcept;
+  void release_regs_after_return();
 
   /// Indicate beginning of region where value-state must not change.
-  void begin_branch_region() noexcept {
+  void begin_branch_region() {
 #ifndef NDEBUG
     assert(!generating_branch);
     generating_branch = true;
@@ -530,7 +528,7 @@ public:
   }
 
   /// Indicate end of region where value-state must not change.
-  void end_branch_region() noexcept {
+  void end_branch_region() {
 #ifndef NDEBUG
     assert(generating_branch);
     generating_branch = false;
@@ -547,55 +545,55 @@ public:
   void generate_branch_to_block(Jump jmp,
                                 IRBlockRef target,
                                 bool needs_split,
-                                bool last_inst) noexcept;
+                                bool last_inst);
 
 #ifndef NDEBUG
-  bool may_change_value_state() const noexcept { return !generating_branch; }
+  bool may_change_value_state() const { return !generating_branch; }
 #endif
 
-  void move_to_phi_nodes(BlockIndex target) noexcept {
+  void move_to_phi_nodes(BlockIndex target) {
     if (analyzer.block_has_phis(target)) {
       move_to_phi_nodes_impl(target);
     }
   }
 
-  void move_to_phi_nodes_impl(BlockIndex target) noexcept;
+  void move_to_phi_nodes_impl(BlockIndex target);
 
   /// Whether branch to a block requires additional instructions and therefore
   /// a direct jump to the block is not possible.
-  bool branch_needs_split(IRBlockRef target) noexcept {
+  bool branch_needs_split(IRBlockRef target) {
     // for now, if the target has PHI-nodes, we split
     return analyzer.block_has_phis(target);
   }
 
   /// @}
 
-  BlockIndex next_block() const noexcept;
+  BlockIndex next_block() const;
 
-  bool try_force_fixed_assignment(IRValueRef) const noexcept { return false; }
+  bool try_force_fixed_assignment(IRValueRef) const { return false; }
 
-  bool hook_post_func_sym_init() noexcept { return true; }
+  bool hook_post_func_sym_init() { return true; }
 
-  void analysis_start() noexcept {}
+  void analysis_start() {}
 
-  void analysis_end() noexcept {}
+  void analysis_end() {}
 
-  void reloc_text(SymRef sym, u32 type, u64 offset, i64 addend = 0) noexcept {
+  void reloc_text(SymRef sym, u32 type, u64 offset, i64 addend = 0) {
     this->assembler.reloc_sec(
         text_writer.get_sec_ref(), sym, type, offset, addend);
   }
 
   /// Convenience function to place a label at the current position.
-  void label_place(Label label) noexcept {
+  void label_place(Label label) {
     this->text_writer.label_place(label, text_writer.offset());
   }
 
 protected:
-  SymRef get_personality_sym() noexcept;
+  SymRef get_personality_sym();
 
-  bool compile_func(IRFuncRef func, u32 func_idx) noexcept;
+  bool compile_func(IRFuncRef func, u32 func_idx);
 
-  bool compile_block(IRBlockRef block, u32 block_idx) noexcept;
+  bool compile_block(IRBlockRef block, u32 block_idx);
 };
 } // namespace tpde
 
@@ -609,7 +607,7 @@ namespace tpde {
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename CBDerived>
 void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
-    CBDerived>::add_arg(ValuePart &&vp, CCAssignment cca) noexcept {
+    CBDerived>::add_arg(ValuePart &&vp, CCAssignment cca) {
   if (!cca.byval && cca.bank == RegBank{}) {
     cca.bank = vp.bank();
     cca.size = vp.part_size();
@@ -678,7 +676,7 @@ void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename CBDerived>
 void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
-    CBDerived>::add_arg(const CallArg &arg, u32 part_count) noexcept {
+    CBDerived>::add_arg(const CallArg &arg, u32 part_count) {
   ValueRef vr = compiler.val_ref(arg.value);
 
   if (arg.flag == CallArg::Flag::byval) {
@@ -715,7 +713,7 @@ void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename CBDerived>
 void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<CBDerived>::call(
-    std::variant<SymRef, ValuePart> target) noexcept {
+    std::variant<SymRef, ValuePart> target) {
   assert(!compiler.stack.is_leaf_function && "leaf func must not have calls");
   compiler.stack.generated_call = true;
   typename RegisterFile::RegBitSet skip_evict = arg_regs;
@@ -741,7 +739,7 @@ void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<CBDerived>::call(
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename CBDerived>
 void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
-    CBDerived>::add_ret(ValuePart &vp, CCAssignment cca) noexcept {
+    CBDerived>::add_ret(ValuePart &vp, CCAssignment cca) {
   cca.bank = vp.bank();
   cca.size = vp.part_size();
   assigner.assign_ret(cca);
@@ -752,7 +750,7 @@ void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename CBDerived>
 void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
-    CBDerived>::add_ret(ValueRef &vr) noexcept {
+    CBDerived>::add_ret(ValueRef &vr) {
   assert(vr.has_assignment());
   u32 part_count = vr.assignment()->part_count;
   for (u32 part_idx = 0; part_idx < part_count; ++part_idx) {
@@ -762,8 +760,8 @@ void CompilerBase<Adaptor, Derived, Config>::CallBuilderBase<
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::RetBuilder::add(
-    ValuePart &&vp, CCAssignment cca) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::RetBuilder::add(ValuePart &&vp,
+                                                             CCAssignment cca) {
   cca.bank = vp.bank();
   u32 size = cca.size = vp.part_size();
   assigner.assign_ret(cca);
@@ -808,8 +806,7 @@ void CompilerBase<Adaptor, Derived, Config>::RetBuilder::add(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::RetBuilder::add(
-    IRValueRef val) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::RetBuilder::add(IRValueRef val) {
   u32 part_count = compiler.val_parts(val).count();
   ValueRef vr = compiler.val_ref(val);
   for (u32 part_idx = 0; part_idx < part_count; ++part_idx) {
@@ -818,7 +815,7 @@ void CompilerBase<Adaptor, Derived, Config>::RetBuilder::add(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::RetBuilder::ret() noexcept {
+void CompilerBase<Adaptor, Derived, Config>::RetBuilder::ret() {
   assert((compiler.register_file.allocatable & ret_regs) == 0);
   compiler.register_file.allocatable |= ret_regs;
 
@@ -831,7 +828,7 @@ bool CompilerBase<Adaptor, Derived, Config>::compile() {
   // create function symbols
   text_writer.begin_module(assembler);
   text_writer.switch_section(
-      assembler.get_section(assembler.get_text_section()));
+      assembler.get_section(assembler.get_default_section(SectionKind::Text)));
 
   assert(func_syms.empty());
   for (const IRFuncRef func : adaptor->funcs()) {
@@ -904,7 +901,7 @@ void CompilerBase<Adaptor, Derived, Config>::reset() {
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::init_assignment(
-    IRValueRef value, ValLocalIdx local_idx) noexcept {
+    IRValueRef value, ValLocalIdx local_idx) {
   assert(val_assignment(local_idx) == nullptr);
   TPDE_LOG_TRACE("Initializing assignment for value {}",
                  static_cast<u32>(local_idx));
@@ -989,7 +986,7 @@ void CompilerBase<Adaptor, Derived, Config>::init_assignment(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::free_assignment(
-    ValLocalIdx local_idx, ValueAssignment *assignment) noexcept {
+    ValLocalIdx local_idx, ValueAssignment *assignment) {
   TPDE_LOG_TRACE("Freeing assignment for value {}",
                  static_cast<u32>(local_idx));
 
@@ -1016,12 +1013,12 @@ void CompilerBase<Adaptor, Derived, Config>::free_assignment(
     }
   }
 
-#ifdef TPDE_ASSERTS
-  for (auto reg_id : register_file.used_regs()) {
-    assert(register_file.reg_local_idx(AsmReg{reg_id}) != local_idx &&
-           "freeing assignment that is still referenced by a register");
+  if constexpr (WithAsserts) {
+    for (auto reg_id : register_file.used_regs()) {
+      assert(register_file.reg_local_idx(AsmReg{reg_id}) != local_idx &&
+             "freeing assignment that is still referenced by a register");
+    }
   }
-#endif
 
   // variable references do not have a stack slot
   bool has_stack = Config::FRAME_INDEXING_NEGATIVE ? assignment->frame_off < 0
@@ -1036,7 +1033,7 @@ void CompilerBase<Adaptor, Derived, Config>::free_assignment(
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 [[gnu::noinline]] void
     CompilerBase<Adaptor, Derived, Config>::release_assignment(
-        ValLocalIdx local_idx, ValueAssignment *assignment) noexcept {
+        ValLocalIdx local_idx, ValueAssignment *assignment) {
   if (!assignment->delay_free) {
     free_assignment(local_idx, assignment);
     return;
@@ -1054,7 +1051,7 @@ template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::init_variable_ref(
-    ValLocalIdx local_idx, u32 var_ref_data) noexcept {
+    ValLocalIdx local_idx, u32 var_ref_data) {
   TPDE_LOG_TRACE("Initializing variable-ref assignment for value {}",
                  static_cast<u32>(local_idx));
 
@@ -1078,8 +1075,7 @@ void CompilerBase<Adaptor, Derived, Config>::init_variable_ref(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-i32 CompilerBase<Adaptor, Derived, Config>::allocate_stack_slot(
-    u32 size) noexcept {
+i32 CompilerBase<Adaptor, Derived, Config>::allocate_stack_slot(u32 size) {
   this->stack.frame_used = true;
   unsigned align_bits = 4;
   if (size == 0) {
@@ -1131,8 +1127,8 @@ i32 CompilerBase<Adaptor, Derived, Config>::allocate_stack_slot(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::free_stack_slot(
-    u32 slot, u32 size) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::free_stack_slot(u32 slot,
+                                                             u32 size) {
   if (size == 0) [[unlikely]] {
     assert(slot == 0 && "unexpected slot for zero-sized stack-slot?");
     // Do nothing.
@@ -1151,7 +1147,7 @@ void CompilerBase<Adaptor, Derived, Config>::prologue_assign_arg(
     u32 arg_idx,
     IRValueRef arg,
     u32 align,
-    bool allow_split) noexcept {
+    bool allow_split) {
   ValueRef vr = derived()->result_ref(arg);
   if (adaptor->cur_arg_is_byval(arg_idx)) {
     CCAssignment cca{
@@ -1209,7 +1205,7 @@ void CompilerBase<Adaptor, Derived, Config>::prologue_assign_arg(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::ValueRef
-    CompilerBase<Adaptor, Derived, Config>::val_ref(IRValueRef value) noexcept {
+    CompilerBase<Adaptor, Derived, Config>::val_ref(IRValueRef value) {
   if (auto special = derived()->val_ref_special(value); special) {
     return ValueRef{this, std::move(*special)};
   }
@@ -1222,8 +1218,7 @@ typename CompilerBase<Adaptor, Derived, Config>::ValueRef
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 std::pair<typename CompilerBase<Adaptor, Derived, Config>::ValueRef,
           typename CompilerBase<Adaptor, Derived, Config>::ValuePartRef>
-    CompilerBase<Adaptor, Derived, Config>::val_ref_single(
-        IRValueRef value) noexcept {
+    CompilerBase<Adaptor, Derived, Config>::val_ref_single(IRValueRef value) {
   std::pair<ValueRef, ValuePartRef> res{val_ref(value), this};
   res.second = res.first.part(0);
   return res;
@@ -1231,8 +1226,7 @@ std::pair<typename CompilerBase<Adaptor, Derived, Config>::ValueRef,
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::ValueRef
-    CompilerBase<Adaptor, Derived, Config>::result_ref(
-        IRValueRef value) noexcept {
+    CompilerBase<Adaptor, Derived, Config>::result_ref(IRValueRef value) {
   const ValLocalIdx local_idx = analyzer.adaptor->val_local_idx(value);
   if (val_assignment(local_idx) == nullptr) {
     init_assignment(value, local_idx);
@@ -1244,7 +1238,7 @@ template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 std::pair<typename CompilerBase<Adaptor, Derived, Config>::ValueRef,
           typename CompilerBase<Adaptor, Derived, Config>::ValuePartRef>
     CompilerBase<Adaptor, Derived, Config>::result_ref_single(
-        IRValueRef value) noexcept {
+        IRValueRef value) {
   std::pair<ValueRef, ValuePartRef> res{result_ref(value), this};
   res.second = res.first.part(0);
   return res;
@@ -1252,8 +1246,8 @@ std::pair<typename CompilerBase<Adaptor, Derived, Config>::ValueRef,
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::ValueRef
-    CompilerBase<Adaptor, Derived, Config>::result_ref_alias(
-        IRValueRef dst, ValueRef &&src) noexcept {
+    CompilerBase<Adaptor, Derived, Config>::result_ref_alias(IRValueRef dst,
+                                                             ValueRef &&src) {
   const ValLocalIdx local_idx = analyzer.adaptor->val_local_idx(dst);
   assert(!val_assignment(local_idx) && "alias target already defined");
   assert(src.has_assignment() && "alias src must have an assignment");
@@ -1268,8 +1262,7 @@ typename CompilerBase<Adaptor, Derived, Config>::ValueRef
   assert(!assignment->pending_free);
   assert(!assignment->variable_ref);
   assert(!assignment->pending_free);
-#ifndef NDEBUG
-  {
+  if constexpr (WithAsserts) {
     const auto &src_liveness = analyzer.liveness_info(src.local_idx());
     assert(!src_liveness.last_full);          // implied by is_owned()
     assert(assignment->references_left == 1); // implied by is_owned()
@@ -1283,7 +1276,6 @@ typename CompilerBase<Adaptor, Derived, Config>::ValueRef
       assert(parts.size_bytes(part_idx) == ap.part_size());
     }
   }
-#endif
 
   // Update local_idx of registers.
   for (u32 part_idx = 0; part_idx < part_count; ++part_idx) {
@@ -1307,7 +1299,7 @@ typename CompilerBase<Adaptor, Derived, Config>::ValueRef
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::ValueRef
     CompilerBase<Adaptor, Derived, Config>::result_ref_stack_slot(
-        IRValueRef dst, AssignmentPartRef base, i32 off) noexcept {
+        IRValueRef dst, AssignmentPartRef base, i32 off) {
   const ValLocalIdx local_idx = analyzer.adaptor->val_local_idx(dst);
   assert(!val_assignment(local_idx) && "new value already defined");
   init_variable_ref(local_idx, 0);
@@ -1318,15 +1310,14 @@ typename CompilerBase<Adaptor, Derived, Config>::ValueRef
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::set_value(
-    ValuePartRef &val_ref, ScratchReg &scratch) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::set_value(ValuePartRef &val_ref,
+                                                       ScratchReg &scratch) {
   val_ref.set_value(std::move(scratch));
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::AsmReg
-    CompilerBase<Adaptor, Derived, Config>::gval_as_reg(
-        GenericValuePart &gv) noexcept {
+    CompilerBase<Adaptor, Derived, Config>::gval_as_reg(GenericValuePart &gv) {
   if (std::holds_alternative<ScratchReg>(gv.state)) {
     return std::get<ScratchReg>(gv.state).cur_reg();
   }
@@ -1349,7 +1340,7 @@ typename CompilerBase<Adaptor, Derived, Config>::AsmReg
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::AsmReg
     CompilerBase<Adaptor, Derived, Config>::gval_as_reg_reuse(
-        GenericValuePart &gv, ScratchReg &dst) noexcept {
+        GenericValuePart &gv, ScratchReg &dst) {
   AsmReg reg = gval_as_reg(gv);
   if (!dst.has_reg()) {
     if (auto *scratch = std::get_if<ScratchReg>(&gv.state)) {
@@ -1365,11 +1356,34 @@ typename CompilerBase<Adaptor, Derived, Config>::AsmReg
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-Reg CompilerBase<Adaptor, Derived, Config>::select_reg_evict(
-    RegBank bank, u64 exclusion_mask) noexcept {
+typename CompilerBase<Adaptor, Derived, Config>::AsmReg
+    CompilerBase<Adaptor, Derived, Config>::gval_as_reg_reuse(
+        GenericValuePart &gv, ValuePart &dst) {
+  AsmReg reg = gval_as_reg(gv);
+  if (!dst.has_reg() &&
+      (!dst.has_assignment() || !dst.assignment().fixed_assignment())) {
+    // TODO: make this less expensive
+    if (auto *scratch = std::get_if<ScratchReg>(&gv.state)) {
+      dst.set_value(this, std::move(*scratch));
+      if (dst.has_assignment()) {
+        dst.lock(this);
+      }
+    } else if (auto *val_ref = std::get_if<ValuePartRef>(&gv.state)) {
+      if (val_ref->can_salvage()) {
+        dst.set_value(this, std::move(*val_ref));
+        if (dst.has_assignment()) {
+          dst.lock(this);
+        }
+      }
+    }
+  }
+  return reg;
+}
+
+template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
+Reg CompilerBase<Adaptor, Derived, Config>::select_reg_evict(RegBank bank) {
   TPDE_LOG_DBG("select_reg_evict for bank {}", bank.id());
-  auto candidates =
-      register_file.used & register_file.bank_regs(bank) & ~exclusion_mask;
+  auto candidates = register_file.used & register_file.bank_regs(bank);
 
   Reg candidate = Reg::make_invalid();
   u32 max_score = 0;
@@ -1443,7 +1457,7 @@ Reg CompilerBase<Adaptor, Derived, Config>::select_reg_evict(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::reload_to_reg(
-    AsmReg dst, AssignmentPartRef ap) noexcept {
+    AsmReg dst, AssignmentPartRef ap) {
   if (!ap.variable_ref()) {
     assert(ap.stack_valid());
     derived()->load_from_stack(dst, ap.frame_off(), ap.part_size());
@@ -1458,7 +1472,7 @@ void CompilerBase<Adaptor, Derived, Config>::reload_to_reg(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::allocate_spill_slot(
-    AssignmentPartRef ap) noexcept {
+    AssignmentPartRef ap) {
   assert(!ap.variable_ref() && "cannot allocate spill slot for variable ref");
   if (ap.assignment()->frame_off == 0) {
     assert(!ap.stack_valid() && "stack-valid set without spill slot");
@@ -1468,8 +1482,7 @@ void CompilerBase<Adaptor, Derived, Config>::allocate_spill_slot(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::spill(
-    AssignmentPartRef ap) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::spill(AssignmentPartRef ap) {
   assert(may_change_value_state());
   if (!ap.stack_valid() && !ap.variable_ref()) {
     assert(ap.register_valid() && "cannot spill uninitialized assignment part");
@@ -1480,8 +1493,7 @@ void CompilerBase<Adaptor, Derived, Config>::spill(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::evict(
-    AssignmentPartRef ap) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::evict(AssignmentPartRef ap) {
   assert(may_change_value_state());
   assert(ap.register_valid());
   derived()->spill(ap);
@@ -1490,7 +1502,7 @@ void CompilerBase<Adaptor, Derived, Config>::evict(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::evict_reg(Reg reg) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::evict_reg(Reg reg) {
   assert(may_change_value_state());
   assert(!register_file.is_fixed(reg));
   assert(register_file.reg_local_idx(reg) != INVALID_VAL_LOCAL_IDX);
@@ -1506,7 +1518,7 @@ void CompilerBase<Adaptor, Derived, Config>::evict_reg(Reg reg) noexcept {
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::free_reg(Reg reg) noexcept {
+void CompilerBase<Adaptor, Derived, Config>::free_reg(Reg reg) {
   assert(may_change_value_state());
   assert(!register_file.is_fixed(reg));
   assert(register_file.reg_local_idx(reg) != INVALID_VAL_LOCAL_IDX);
@@ -1524,7 +1536,7 @@ void CompilerBase<Adaptor, Derived, Config>::free_reg(Reg reg) noexcept {
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::RegisterFile::RegBitSet
     CompilerBase<Adaptor, Derived, Config>::spill_before_branch(
-        bool force_spill) noexcept {
+        bool force_spill) {
   // since we do not explicitly keep track of register assignments per block,
   // whenever we might branch off to a block that we do not directly compile
   // afterwards (i.e. the register assignments might change in between), we
@@ -1635,7 +1647,7 @@ typename CompilerBase<Adaptor, Derived, Config>::RegisterFile::RegBitSet
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::release_spilled_regs(
-    typename RegisterFile::RegBitSet regs) noexcept {
+    typename RegisterFile::RegBitSet regs) {
   assert(may_change_value_state());
 
   // TODO(ts): needs changes for other RegisterFile impls
@@ -1647,8 +1659,7 @@ void CompilerBase<Adaptor, Derived, Config>::release_spilled_regs(
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-void CompilerBase<Adaptor, Derived, Config>::
-    release_regs_after_return() noexcept {
+void CompilerBase<Adaptor, Derived, Config>::release_regs_after_return() {
   // we essentially have to free all non-fixed registers
   for (auto reg_id : register_file.used_regs()) {
     if (!register_file.is_fixed(Reg{reg_id})) {
@@ -1660,7 +1671,7 @@ void CompilerBase<Adaptor, Derived, Config>::
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename Jump>
 void CompilerBase<Adaptor, Derived, Config>::generate_branch_to_block(
-    Jump jmp, IRBlockRef target, bool needs_split, bool last_inst) noexcept {
+    Jump jmp, IRBlockRef target, bool needs_split, bool last_inst) {
   BlockIndex target_idx = this->analyzer.block_idx(target);
   Label target_label = this->block_labels[u32(target_idx)];
   if (!needs_split) {
@@ -1679,7 +1690,7 @@ void CompilerBase<Adaptor, Derived, Config>::generate_branch_to_block(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::generate_uncond_branch(
-    IRBlockRef target) noexcept {
+    IRBlockRef target) {
   auto spilled = spill_before_branch();
   begin_branch_region();
 
@@ -1692,7 +1703,7 @@ void CompilerBase<Adaptor, Derived, Config>::generate_uncond_branch(
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 template <typename Jump>
 void CompilerBase<Adaptor, Derived, Config>::generate_cond_branch(
-    Jump jmp, IRBlockRef true_target, IRBlockRef false_target) noexcept {
+    Jump jmp, IRBlockRef true_target, IRBlockRef false_target) {
   IRBlockRef next = analyzer.block_ref(next_block());
 
   bool true_needs_split = branch_needs_split(true_target);
@@ -1720,44 +1731,30 @@ void CompilerBase<Adaptor, Derived, Config>::generate_cond_branch(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::generate_switch(
-    tpde::util::SmallVector<ScratchReg, 1> &&conds,
+    ScratchReg &&cond,
     u32 width,
     IRBlockRef default_block,
-    std::span<const std::pair<tpde::util::SmallVector<u64, 1>, IRBlockRef>>
-        cases) noexcept {
+    std::span<const std::pair<u64, IRBlockRef>> cases) {
   // This function takes cond as a ScratchReg as opposed to a ValuePart, because
   // the ValueRef for the condition must be ref-counted before we enter the
   // branch region.
 
-  assert(width <= 128);
+  assert(width <= 64);
   // We don't support sections with more than 4 GiB, so switches with more than
   // 4G cases are impossible to support.
   assert(cases.size() < UINT32_MAX && "large switches are unsupported");
 
-  ScratchReg tmp_scratch{this};
-  std::vector<std::pair<AsmReg, AsmReg>> cmp_tmp_regs(conds.size());
-  // TODO (mj): don't allocate a register for switch statements that can use
-  // immediates
-  std::transform(conds.begin(),
-                 conds.end(),
-                 cmp_tmp_regs.begin(),
-                 [&tmp_scratch](ScratchReg &x) {
-                   return std::make_pair(x.cur_reg(), tmp_scratch.alloc_gp());
-                 });
-
+  AsmReg cmp_reg = cond.cur_reg();
   bool width_is_32 = width <= 32;
   if (u32 dst_width = util::align_up(width, 32); width != dst_width) {
-    // Only generate integer extension for the last 64 bits.
-    derived()->generate_raw_intext(cmp_tmp_regs.back().first,
-                                   cmp_tmp_regs.back().first,
-                                   false,
-                                   width % 64,
-                                   dst_width - (width - (width % 64)));
+    derived()->generate_raw_intext(cmp_reg, cmp_reg, false, width, dst_width);
   }
 
   // We must not evict any registers in the branching code, as we don't track
   // the individual value states per block. Hence, we must not allocate any
   // registers (e.g., for constants, jump table address) below.
+  ScratchReg tmp_scratch{this};
+  AsmReg tmp_reg = tmp_scratch.alloc_gp();
 
   const auto spilled = this->spill_before_branch();
   this->begin_branch_region();
@@ -1789,79 +1786,60 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
       // if there are four or less cases we just compare the values
       // against each of them
       for (auto i = 0u; i < num_cases; ++i) {
-        assert(cases[i].first.size() == conds.size());
-        tpde::util::SmallVector<std::tuple<AsmReg, AsmReg, u64>, 1> case_parts;
-        for (unsigned j = 0; j < conds.size(); j++) {
-          case_parts.emplace_back(std::make_tuple(cmp_tmp_regs[j].first,
-                                                  cmp_tmp_regs[j].second,
-                                                  cases[i].first[j]));
-        }
-        derived()->switch_emit_cmpeq(
-            case_labels[begin + i], case_parts, width_is_32);
+        derived()->switch_emit_cmpeq(case_labels[begin + i],
+                                     cmp_reg,
+                                     tmp_reg,
+                                     cases[begin + i].first,
+                                     width_is_32);
       }
 
       derived()->generate_raw_jump(Derived::Jump::jmp, default_label);
       return;
     }
 
-    if (width <= 64) { // TODO (mj): support jump tables for
-                       // 128-bit switch statements?
-      // check if the density of the values is high enough to warrant building
-      // a jump table
-      auto range = cases[end - 1].first[0] - cases[begin].first[0];
-      // we will get wrong results if range is -1 so skip the jump table if
-      // that is the case
-      if (range != 0xFFFF'FFFF'FFFF'FFFF && (range / num_cases) < 8) {
-        // for gcc, it seems that if there are less than 8 values per
-        // case it will build a jump table so we do that, too
+    // check if the density of the values is high enough to warrant building
+    // a jump table
+    u64 low_bound = cases[begin].first;
+    u64 high_bound = cases[end - 1].first;
+    auto range = high_bound - low_bound + 1;
+    // we will get wrong results if range is 0 so skip the jump table if
+    // that is the case
+    if (range != 0 && (range / num_cases) < 8) {
+      // for gcc, it seems that if there are less than 8 values per
+      // case it will build a jump table so we do that, too
 
-        // the actual range is one greater than the result we get from
-        // subtracting so adjust for that
-        range += 1;
-
-        tpde::util::SmallVector<tpde::Label, 32> label_vec;
-        std::span<tpde::Label> labels;
+      // Give target the option to emit a jump table.
+      auto *jt = derived()->switch_create_jump_table(
+          default_label, cmp_reg, tmp_reg, low_bound, high_bound, width_is_32);
+      if (jt) {
         if (range == num_cases) {
-          labels = std::span{case_labels.begin() + begin, num_cases};
+          std::copy(case_labels.begin() + begin,
+                    case_labels.begin() + end,
+                    jt->labels().begin());
         } else {
-          label_vec.resize(range, default_label);
-          for (auto i = 0u; i < num_cases; ++i) {
-            label_vec[cases[begin + i].first[0] - cases[begin].first[0]] =
-                case_labels[begin + i];
+          std::ranges::fill(jt->labels(), default_label);
+          for (auto i = begin; i != end; ++i) {
+            jt->labels()[cases[i].first - low_bound] = case_labels[i];
           }
-          labels = std::span{label_vec.begin(), range};
         }
-
-        // Give target the option to emit a jump table.
-        if (derived()->switch_emit_jump_table(default_label,
-                                              labels,
-                                              cmp_tmp_regs[0].first,
-                                              cmp_tmp_regs[0].second,
-                                              cases[begin].first[0],
-                                              cases[end - 1].first[0],
-                                              width_is_32)) {
-          return;
-        }
+        return;
       }
     }
 
     // do a binary search step
-    const unsigned long half_len = num_cases / 2;
-    const std::span<const u64> half_value = cases[begin + half_len].first;
-    const Label gt_label = this->text_writer.label_create();
-
-    assert(half_value.size() == conds.size());
-    tpde::util::SmallVector<std::tuple<AsmReg, AsmReg, u64>, 1> case_parts;
-    for (unsigned j = 0; j < conds.size(); j++) {
-      case_parts.emplace_back(std::make_tuple(
-          cmp_tmp_regs[j].first, cmp_tmp_regs[j].second, half_value[j]));
-    }
+    const auto half_len = num_cases / 2;
+    const auto half_value = cases[begin + half_len].first;
+    const auto gt_label = this->text_writer.label_create();
 
     // this will cmp against the input value, jump to the case if it is
     // equal or to gt_label if the value is greater. Otherwise it will
     // fall-through
-    derived()->switch_emit_binary_step(
-        case_labels[begin + half_len], gt_label, case_parts, width_is_32);
+    derived()->switch_emit_binary_step(case_labels[begin + half_len],
+                                       gt_label,
+                                       cmp_reg,
+                                       tmp_reg,
+                                       half_value,
+                                       width_is_32);
     // search the lower half
     self(begin, begin + half_len, self);
 
@@ -1878,8 +1856,8 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
       Derived::Jump::jmp, default_block, false, false);
 
   for (const auto &[label, target] : case_blocks) {
-    // Branch predictors typically have problems if too many branches
-    // follow too closely. Ensure a minimum alignment.
+    // Branch predictors typically have problems if too many branches follow too
+    // closely. Ensure a minimum alignment.
     this->text_writer.align(8);
     this->label_place(label);
     derived()->generate_branch_to_block(
@@ -1892,7 +1870,7 @@ void CompilerBase<Adaptor, Derived, Config>::generate_switch(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 void CompilerBase<Adaptor, Derived, Config>::move_to_phi_nodes_impl(
-    BlockIndex target) noexcept {
+    BlockIndex target) {
   // PHI-nodes are always moved to their stack-slot (unless they are fixed)
   //
   // However, we need to take care of PHI-dependencies (cycles and chains)
@@ -2005,13 +1983,11 @@ void CompilerBase<Adaptor, Derived, Config>::move_to_phi_nodes_impl(
     // bool incoming_is_phi;
     u32 ref_count;
 
-    bool operator<(const NodeEntry &other) const noexcept {
+    bool operator<(const NodeEntry &other) const {
       return phi_local_idx < other.phi_local_idx;
     }
 
-    bool operator<(ValLocalIdx other) const noexcept {
-      return phi_local_idx < other;
-    }
+    bool operator<(ValLocalIdx other) const { return phi_local_idx < other; }
   };
 
   util::SmallVector<NodeEntry, 16> nodes;
@@ -2069,8 +2045,8 @@ void CompilerBase<Adaptor, Derived, Config>::move_to_phi_nodes_impl(
   // fill in the refcount
   auto all_zero_ref = true;
   for (auto &node : nodes) {
-    // We don't need to do anything for PHIs that don't reference other PHIs
-    // or self-referencing PHIs.
+    // We don't need to do anything for PHIs that don't reference other PHIs or
+    // self-referencing PHIs.
     bool incoming_is_phi = adaptor->val_is_phi(node.incoming_val);
     if (!incoming_is_phi || node.incoming_val == node.phi) {
       continue;
@@ -2079,8 +2055,8 @@ void CompilerBase<Adaptor, Derived, Config>::move_to_phi_nodes_impl(
     ValLocalIdx inc_local_idx = adaptor->val_local_idx(node.incoming_val);
     auto it = std::lower_bound(nodes.begin(), nodes.end(), inc_local_idx);
     if (it == nodes.end() || it->phi != node.incoming_val) {
-      // Incoming value is a PHI node, but it's not from our block, so we
-      // don't need to be particularly careful when assigning values.
+      // Incoming value is a PHI node, but it's not from our block, so we don't
+      // need to be particularly careful when assigning values.
       continue;
     }
     node.incoming_phi_local_idx = inc_local_idx;
@@ -2254,12 +2230,12 @@ void CompilerBase<Adaptor, Derived, Config>::move_to_phi_nodes_impl(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 typename CompilerBase<Adaptor, Derived, Config>::BlockIndex
-    CompilerBase<Adaptor, Derived, Config>::next_block() const noexcept {
+    CompilerBase<Adaptor, Derived, Config>::next_block() const {
   return static_cast<BlockIndex>(static_cast<u32>(cur_block_idx) + 1);
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-SymRef CompilerBase<Adaptor, Derived, Config>::get_personality_sym() noexcept {
+SymRef CompilerBase<Adaptor, Derived, Config>::get_personality_sym() {
   SymRef personality_sym;
   if (this->adaptor->cur_needs_unwind_info()) {
     SymRef personality_func = derived()->cur_personality_func();
@@ -2277,7 +2253,8 @@ SymRef CompilerBase<Adaptor, Derived, Config>::get_personality_sym() noexcept {
         u32 off;
         static constexpr std::array<u8, 8> zero{};
 
-        auto rodata = this->assembler.get_data_section(true, true);
+        auto rodata =
+            this->assembler.get_default_section(SectionKind::DataRelRO);
         personality_sym = this->assembler.sym_def_data(
             rodata, "", zero, 8, Assembler::SymBinding::LOCAL, &off);
         this->assembler.reloc_abs(rodata, personality_func, off, 0);
@@ -2290,8 +2267,8 @@ SymRef CompilerBase<Adaptor, Derived, Config>::get_personality_sym() noexcept {
 }
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
-bool CompilerBase<Adaptor, Derived, Config>::compile_func(
-    const IRFuncRef func, const u32 func_idx) noexcept {
+bool CompilerBase<Adaptor, Derived, Config>::compile_func(const IRFuncRef func,
+                                                          const u32 func_idx) {
   if (!adaptor->switch_func(func)) {
     return false;
   }
@@ -2299,9 +2276,9 @@ bool CompilerBase<Adaptor, Derived, Config>::compile_func(
   analyzer.switch_func(func);
   derived()->analysis_end();
 
-#ifndef NDEBUG
-  stack.frame_size = ~0u;
-#endif
+  if constexpr (WithAsserts) {
+    stack.frame_size = ~0u;
+  }
   for (auto &e : stack.fixed_free_lists) {
     e.clear();
   }
@@ -2372,19 +2349,31 @@ bool CompilerBase<Adaptor, Derived, Config>::compile_func(
 
   this->register_file.allocatable |= cc_info.arg_regs;
 
+  // Small allocas get stack slot, larger allocas need dynamic allocations.
+  util::SmallVector<std::tuple<IRValueRef, u32, u32>> dyn_allocas;
   for (const IRValueRef alloca : adaptor->cur_static_allocas()) {
     auto size = adaptor->val_alloca_size(alloca);
-    size = util::align_up(size, adaptor->val_alloca_align(alloca));
+    auto align = adaptor->val_alloca_align(alloca);
+    if (align > 16 || size > Derived::MaxStaticAllocaSize) {
+      stack.has_dynamic_alloca = true;
+      dyn_allocas.emplace_back(alloca, size, align);
+      continue;
+    }
 
     ValLocalIdx local_idx = adaptor->val_local_idx(alloca);
     init_variable_ref(local_idx, 0);
     ValueAssignment *assignment = val_assignment(local_idx);
     assignment->stack_variable = true;
-    assignment->frame_off = allocate_stack_slot(size);
+    assignment->frame_off = allocate_stack_slot(util::align_up(size, align));
   }
 
   if constexpr (!Config::DEFAULT_VAR_REF_HANDLING) {
     derived()->setup_var_ref_assignments();
+  }
+
+  for (auto &[alloca, size, align] : dyn_allocas) {
+    auto [_, vr] = this->result_ref_single(alloca);
+    derived()->alloca_fixed(size, align, vr);
   }
 
   for (u32 i = 0; i < analyzer.block_layout.size(); ++i) {
@@ -2421,7 +2410,7 @@ bool CompilerBase<Adaptor, Derived, Config>::compile_func(
 
 template <IRAdaptor Adaptor, typename Derived, CompilerConfig Config>
 bool CompilerBase<Adaptor, Derived, Config>::compile_block(
-    const IRBlockRef block, const u32 block_idx) noexcept {
+    const IRBlockRef block, const u32 block_idx) {
   cur_block_idx =
       static_cast<typename Analyzer<Adaptor>::BlockIndex>(block_idx);
 
@@ -2444,20 +2433,20 @@ bool CompilerBase<Adaptor, Derived, Config>::compile_block(
     }
   }
 
-#ifndef NDEBUG
-  // Some consistency checks. Register assignment information must match, all
-  // used registers must have an assignment (no temporaries across blocks),
-  // and fixed registers must be fixed assignments.
-  for (auto reg_id : register_file.used_regs()) {
-    Reg reg{reg_id};
-    assert(register_file.reg_local_idx(reg) != INVALID_VAL_LOCAL_IDX);
-    AssignmentPartRef ap{val_assignment(register_file.reg_local_idx(reg)),
-                         register_file.reg_part(reg)};
-    assert(ap.register_valid());
-    assert(ap.get_reg() == reg);
-    assert(!register_file.is_fixed(reg) || ap.fixed_assignment());
+  if constexpr (WithAsserts) {
+    // Some consistency checks. Register assignment information must match, all
+    // used registers must have an assignment (no temporaries across blocks),
+    // and fixed registers must be fixed assignments.
+    for (auto reg_id : register_file.used_regs()) {
+      Reg reg{reg_id};
+      assert(register_file.reg_local_idx(reg) != INVALID_VAL_LOCAL_IDX);
+      AssignmentPartRef ap{val_assignment(register_file.reg_local_idx(reg)),
+                           register_file.reg_part(reg)};
+      assert(ap.register_valid());
+      assert(ap.get_reg() == reg);
+      assert(!register_file.is_fixed(reg) || ap.fixed_assignment());
+    }
   }
-#endif
 
   if (static_cast<u32>(assignments.delayed_free_lists[block_idx]) != ~0u) {
     auto list_entry = assignments.delayed_free_lists[block_idx];

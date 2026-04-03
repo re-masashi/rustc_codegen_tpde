@@ -4,6 +4,8 @@
 
 ; RUN: tpde-llc --target=x86_64 %s | %objdump | FileCheck %s -check-prefixes=X64
 ; RUN: tpde-llc --target=aarch64 %s | %objdump | FileCheck %s -check-prefixes=ARM64
+; XFAIL: llvm19.1
+; XFAIL: llvm20.1
 
 define <2 x float> @fadd_v2f32_1(<2 x float> %0) {
 ; X64-LABEL: <fadd_v2f32_1>:
@@ -40,9 +42,9 @@ define <2 x float> @fadd_v2f32_f32_spill(<2 x float> %0, <2 x float> %1) {
 ; X64-NEXT:    sub rsp, 0x40
 ; X64-NEXT:    movq qword ptr [rbp - 0x30], xmm0
 ; X64-NEXT:    movq qword ptr [rbp - 0x38], xmm1
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fadd_v2f32_f32_spill-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    movapd xmm1, xmm0
 ; X64-NEXT:    addps xmm1, xmmword ptr [rbp - 0x30]
 ; X64-NEXT:    movq xmm1, qword ptr [rbp - 0x38]
@@ -56,7 +58,8 @@ define <2 x float> @fadd_v2f32_f32_spill(<2 x float> %0, <2 x float> %1) {
 ; ARM64-NEXT:    mov x29, sp
 ; ARM64-NEXT:    str d0, [x29, #0xa0]
 ; ARM64-NEXT:    str d1, [x29, #0xa8]
-; ARM64-NEXT:    bl 0x30 <fadd_v2f32_f32_spill+0x10>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fadd_v2f32_f32_spill
 ; ARM64-NEXT:    ldr d1, [x29, #0xa0]
 ; ARM64-NEXT:    fadd v1.2s, v0.2s, v1.2s

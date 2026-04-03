@@ -21,11 +21,14 @@ public:
   JITMapperImpl(GlobalMap &&globals) : globals(std::move(globals)) {}
 
   /// Map the ELF from the assembler into memory, returns true on success.
-  bool map(tpde::elf::AssemblerElf &,
-           tpde::elf::ElfMapper::SymbolResolver) noexcept;
+  bool map(tpde::elf::AssemblerElf &, tpde::elf::ElfMapper::SymbolResolver);
 
-  void *lookup_global(llvm::GlobalValue *gv) noexcept {
+  void *lookup_global(llvm::GlobalValue *gv) const {
     return mapper.get_sym_addr(globals.lookup(gv));
+  }
+
+  std::pair<void *, size_t> get_mapped_range() const {
+    return mapper.get_mapped_range();
   }
 };
 

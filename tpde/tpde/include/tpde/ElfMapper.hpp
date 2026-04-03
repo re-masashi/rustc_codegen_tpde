@@ -18,14 +18,14 @@ public:
 
 private:
   u8 *mapped_addr = nullptr;
-  size_t mapped_size;
+  size_t mapped_size = 0;
   u32 registered_frame_off = 0;
 
   u32 local_sym_count = 0;
   util::SmallVector<void *, 64> sym_addrs;
 
 public:
-  ElfMapper() noexcept = default;
+  ElfMapper() = default;
   ~ElfMapper() { reset(); }
 
   ElfMapper(const ElfMapper &) = delete;
@@ -34,11 +34,13 @@ public:
   ElfMapper &operator=(const ElfMapper &) = delete;
   ElfMapper &operator=(ElfMapper &&) = delete;
 
-  void reset() noexcept;
+  void reset();
 
-  bool map(AssemblerElf &assembler, SymbolResolver resolver) noexcept;
+  bool map(AssemblerElf &assembler, SymbolResolver resolver);
 
-  void *get_sym_addr(SymRef sym) noexcept;
+  void *get_sym_addr(SymRef sym) const;
+
+  std::pair<void *, size_t> get_mapped_range() const;
 };
 
 } // namespace tpde::elf

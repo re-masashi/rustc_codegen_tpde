@@ -6,6 +6,8 @@
 #include "tpde/ELF.hpp"
 #include "tpde/StringTable.hpp"
 #include "tpde/util/misc.hpp"
+#include <span>
+#include <string_view>
 
 namespace tpde::elf {
 
@@ -40,10 +42,7 @@ constexpr static std::span<const char> SHSTRTAB = {
     ".group\0"
     ".symtab_shndx\0"};
 
-static void fail_constexpr_compile(const char *) {
-  assert(0);
-  exit(1);
-}
+void fail_constexpr_compile(const char *) {}
 
 consteval static u32 sec_idx(const std::string_view name) {
   // skip the first null string
@@ -64,21 +63,13 @@ consteval static u32 sec_idx(const std::string_view name) {
   return ~0u;
 }
 
-consteval static u32 sec_off(const std::string_view name) {
-  // skip the first null string
-  const char *data = SHSTRTAB.data() + 1;
-  auto sec_name = std::string_view{data};
-  while (!sec_name.empty()) {
-    if (sec_name.ends_with(name)) {
-      return sec_name.data() + sec_name.size() - name.size() - SHSTRTAB.data();
-    }
-
-    data += sec_name.size() + 1;
-    sec_name = std::string_view{data};
+consteval static u32 sec_off(const char *name) {
+  std::string_view tab(SHSTRTAB.data(), SHSTRTAB.size());
+  size_t pos = tab.find(name, 1, std::string_view(name).size() + 1);
+  if (pos == std::string_view::npos) {
+    fail_constexpr_compile("unknown section name");
   }
-
-  fail_constexpr_compile("unknown section name");
-  return ~0u;
+  return pos;
 }
 
 consteval static u32 predef_sec_count() {
@@ -95,7 +86,7 @@ consteval static u32 predef_sec_count() {
   return idx;
 }
 
-void AssemblerElf::reset() noexcept {
+void AssemblerElf::reset() {
   Assembler::reset();
 
   global_symbols.clear();
@@ -106,7 +97,7 @@ void AssemblerElf::reset() noexcept {
   init_sections();
 }
 
-void AssemblerElf::rename_section(SecRef ref, std::string_view name) noexcept {
+void AssemblerElf::rename_section(SecRef ref, std::string_view name) {
   DataSection &sec = get_section(ref);
   // This is possible, just not implemented. But maybe there's no requirement at
   // all that section symbols are named.
@@ -116,7 +107,7 @@ void AssemblerElf::rename_section(SecRef ref, std::string_view name) noexcept {
   sec.name = rela_name + (sec.has_relocs ? 5 : 0);
 }
 
-SymRef AssemblerElf::section_symbol(SecRef ref) noexcept {
+SymRef AssemblerElf::section_symbol(SecRef ref) {
   SymRef &sym = get_section(ref).sym;
   if (!sym.valid()) {
     u16 shndx = sec_is_xindex(ref) ? u16(SHN_XINDEX) : ref.id();
@@ -137,13 +128,13 @@ SymRef AssemblerElf::section_symbol(SecRef ref) noexcept {
   return sym;
 }
 
-const char *AssemblerElf::sec_name(SecRef ref) const noexcept {
+const char *AssemblerElf::sec_name(SecRef ref) const {
   const DataSection &sec = get_section(ref);
   assert(sec.name < SHSTRTAB.size());
   return SHSTRTAB.data() + sec.name;
 }
 
-SecRef AssemblerElf::create_structor_section(bool init, SecRef group) noexcept {
+SecRef AssemblerElf::create_structor_section(bool init, SecRef group) {
   // TODO: priorities
   TargetInfo::SectionFlags flags{
       .type = u32(init ? SHT_INIT_ARRAY : SHT_FINI_ARRAY),
@@ -159,7 +150,7 @@ SecRef AssemblerElf::create_structor_section(bool init, SecRef group) noexcept {
 }
 
 SecRef AssemblerElf::create_group_section(SymRef signature_sym,
-                                          bool is_comdat) noexcept {
+                                          bool is_comdat) {
   TargetInfo::SectionFlags flags{.type = SHT_GROUP,
                                  .flags = 0,
                                  .name = sec_off(".group"),
@@ -173,7 +164,7 @@ SecRef AssemblerElf::create_group_section(SymRef signature_sym,
   return ref;
 }
 
-void AssemblerElf::add_to_group(SecRef group_ref, SecRef sec_ref) noexcept {
+void AssemblerElf::add_to_group(SecRef group_ref, SecRef sec_ref) {
   DataSection &sec = get_section(sec_ref);
   assert(!(sec.flags & SHF_GROUP) && "section must be in at most one group");
   sec.flags |= SHF_GROUP;
@@ -185,13 +176,13 @@ void AssemblerElf::add_to_group(SecRef group_ref, SecRef sec_ref) noexcept {
   }
 }
 
-void AssemblerElf::init_sections() noexcept {
+void AssemblerElf::init_sections() {
   for (size_t i = 0; i < predef_sec_count(); i++) {
     sections.emplace_back(nullptr);
   }
 }
 
-void AssemblerElf::sym_copy(SymRef dst, SymRef src) noexcept {
+void AssemblerElf::sym_copy(SymRef dst, SymRef src) {
   Elf64_Sym *src_ptr = sym_ptr(src), *dst_ptr = sym_ptr(dst);
 
   dst_ptr->st_shndx = src_ptr->st_shndx;
@@ -205,7 +196,7 @@ void AssemblerElf::sym_copy(SymRef dst, SymRef src) noexcept {
 
 SymRef AssemblerElf::sym_add(const std::string_view name,
                              SymBinding binding,
-                             u32 type) noexcept {
+                             u32 type) {
   size_t str_off = strtab.add(name);
 
   u8 info;
@@ -234,7 +225,7 @@ SymRef AssemblerElf::sym_add(const std::string_view name,
   }
 }
 
-void AssemblerElf::sym_def_xindex(SymRef sym_ref, SecRef sec_ref) noexcept {
+void AssemblerElf::sym_def_xindex(SymRef sym_ref, SecRef sec_ref) {
   assert(sec_is_xindex(sec_ref));
   auto &shndx = sym_is_local(sym_ref) ? local_shndx : global_shndx;
   if (shndx.size() <= sym_idx(sym_ref)) {
@@ -243,7 +234,7 @@ void AssemblerElf::sym_def_xindex(SymRef sym_ref, SecRef sec_ref) noexcept {
   shndx[sym_idx(sym_ref)] = sec_ref.id();
 }
 
-std::vector<u8> AssemblerElf::build_object_file() noexcept {
+std::vector<u8> AssemblerElf::build_object_file() {
   using namespace elf;
 
   auto target_info = static_cast<const TargetInfoElf &>(this->target_info);
@@ -484,7 +475,7 @@ std::vector<u8> AssemblerElf::build_object_file() noexcept {
 
 namespace {
 
-static constexpr auto get_elf_section_flags() {
+static consteval auto get_elf_section_flags() {
   using SectionFlags = Assembler::TargetInfo::SectionFlags;
   std::array<SectionFlags, unsigned(SectionKind::Max)> section_flags;
   section_flags[u8(SectionKind::Text)] =

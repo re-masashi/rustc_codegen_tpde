@@ -21,9 +21,30 @@
 extern "C" void __register_frame(void *);
 extern "C" void __deregister_frame(void *);
 
+// Weak symbols to distinguish LLVM's libunwind from libgcc_s, which have
+// different semantics for __register_frame/__deregister_frame.
+extern "C" void __unw_add_dynamic_eh_frame_section(uintptr_t)
+    __attribute__((weak));
+extern "C" void __unw_remove_dynamic_eh_frame_section(uintptr_t)
+    __attribute__((weak));
+
 namespace tpde::elf {
 
-namespace {
+static void register_frame_wrapper(void *fdes) {
+  if (__unw_add_dynamic_eh_frame_section) {
+    __unw_add_dynamic_eh_frame_section(reinterpret_cast<uintptr_t>(fdes));
+  } else {
+    __register_frame(fdes);
+  }
+}
+
+static void deregister_frame_wrapper(void *fdes) {
+  if (__unw_add_dynamic_eh_frame_section) {
+    __unw_remove_dynamic_eh_frame_section(reinterpret_cast<uintptr_t>(fdes));
+  } else {
+    __deregister_frame(fdes);
+  }
+}
 
 enum class Arch {
   Unknown,
@@ -39,23 +60,22 @@ static constexpr Arch TargetArch = Arch::AArch64;
 static constexpr Arch TargetArch = Arch::Unknown;
   #endif
 
-} // anonymous namespace
-
-void ElfMapper::reset() noexcept {
+void ElfMapper::reset() {
   if (!mapped_addr) {
     return;
   }
 
   if (registered_frame_off) {
-    __deregister_frame(mapped_addr + registered_frame_off);
+    deregister_frame_wrapper(mapped_addr + registered_frame_off);
   }
 
   munmap(mapped_addr, mapped_size);
   mapped_addr = nullptr;
+  mapped_size = 0;
   sym_addrs.clear();
 }
 
-bool ElfMapper::map(AssemblerElf &assembler, SymbolResolver resolver) noexcept {
+bool ElfMapper::map(AssemblerElf &assembler, SymbolResolver resolver) {
   // Approximate number of PLT/GOT slots.
   // TODO: better approximation
   u32 got_plt_slot_count =
@@ -74,7 +94,7 @@ bool ElfMapper::map(AssemblerElf &assembler, SymbolResolver resolver) noexcept {
     SecRef section;
     u32 sort_key;
 
-    std::weak_ordering operator<=>(const AllocSection &other) const noexcept {
+    std::weak_ordering operator<=>(const AllocSection &other) const {
       return sort_key <=> other.sort_key;
     }
   };
@@ -178,6 +198,10 @@ bool ElfMapper::map(AssemblerElf &assembler, SymbolResolver resolver) noexcept {
       const Elf64_Sym *elf_sym = assembler.sym_ptr(sym);
       if (elf_sym->st_shndx == SHN_UNDEF) {
         void *addr = resolver(assembler.sym_name(sym));
+        if (!addr && elf_sym->st_bind() == STB_GLOBAL) {
+          TPDE_LOG_ERR("unresolved symbol {}", assembler.sym_name(sym));
+          success = false;
+        }
         sym_addrs[idx] = addr;
       } else if (elf_sym->st_shndx == SHN_ABS) {
         sym_addrs[idx] = reinterpret_cast<void *>(elf_sym->st_value);
@@ -395,12 +419,12 @@ bool ElfMapper::map(AssemblerElf &assembler, SymbolResolver resolver) noexcept {
   auto &eh_frame = assembler.get_section(
       assembler.get_default_section(SectionKind::EHFrame));
   registered_frame_off = eh_frame.addr;
-  __register_frame(mapped_addr + registered_frame_off);
+  register_frame_wrapper(mapped_addr + registered_frame_off);
 
   return true;
 }
 
-void *ElfMapper::get_sym_addr(SymRef sym) noexcept {
+void *ElfMapper::get_sym_addr(SymRef sym) const {
   auto idx = AssemblerElf::sym_idx(sym);
   if (!AssemblerElf::sym_is_local(sym)) {
     idx += local_sym_count;
@@ -409,20 +433,27 @@ void *ElfMapper::get_sym_addr(SymRef sym) noexcept {
   return sym_addrs[idx];
 }
 
+std::pair<void *, size_t> ElfMapper::get_mapped_range() const {
+  return {mapped_addr, mapped_size};
+}
+
 } // namespace tpde::elf
 
 #else
 
 // Dummy implementation for non-ELF platforms
 namespace tpde::elf {
-void ElfMapper::reset() noexcept {
+void ElfMapper::reset() {
   (void)mapped_addr;
   (void)mapped_size;
   (void)registered_frame_off;
   (void)local_sym_count;
 }
-bool ElfMapper::map(AssemblerElf &, SymbolResolver) noexcept { return false; }
-void *ElfMapper::get_sym_addr(SymRef) noexcept { return nullptr; }
+bool ElfMapper::map(AssemblerElf &, SymbolResolver) { return false; }
+void *ElfMapper::get_sym_addr(SymRef) const { return nullptr; }
+std::pair<void *, size_t> ElfMapper::get_mapped_range() const {
+  return {nullptr, 0ull};
+}
 } // namespace tpde::elf
 
 #endif

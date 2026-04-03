@@ -4,6 +4,8 @@
 
 ; RUN: tpde-llc --target=x86_64 %s | %objdump | FileCheck %s -check-prefixes=X64
 ; RUN: tpde-llc --target=aarch64 %s | %objdump | FileCheck %s -check-prefixes=ARM64
+; XFAIL: llvm19.1
+; XFAIL: llvm20.1
 
 @t1 = external thread_local global i32, align 4
 
@@ -16,12 +18,14 @@ define ptr @getaddr() {
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
 ;
 ; ARM64-LABEL: <getaddr>:
-; ARM64:         stp x29, x30, [sp, #-0xa0]!
+; ARM64:       <L0>:
+; ARM64-NEXT:    stp x29, x30, [sp, #-0xa0]!
 ; ARM64-NEXT:    mov x29, sp
 ; ARM64-NEXT:    adrp x0, 0x0 <getaddr>
 ; ARM64-NEXT:     R_AARCH64_TLSDESC_ADR_PAGE21 t1
@@ -48,6 +52,7 @@ define i32 @load() {
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    mov eax, dword ptr [rax]
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
@@ -84,6 +89,7 @@ define void @store(i32 %v) {
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    mov ecx, dword ptr [rbp - 0x2c]
 ; X64-NEXT:    mov dword ptr [rax], ecx
 ; X64-NEXT:    add rsp, 0x30
@@ -124,6 +130,7 @@ define void @store3(i32, i32, i32 %v) {
 ; X64-NEXT:     R_X86_64_TLSGD t1-0x4
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 __tls_get_addr-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    mov ecx, dword ptr [rbp - 0x2c]
 ; X64-NEXT:    mov dword ptr [rax], ecx
 ; X64-NEXT:    add rsp, 0x30

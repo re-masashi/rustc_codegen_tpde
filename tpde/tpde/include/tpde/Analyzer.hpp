@@ -92,7 +92,7 @@ struct Analyzer {
   /// liveness information. Previous information is discarded.
   void switch_func(IRFuncRef func);
 
-  IRBlockRef block_ref(const BlockIndex idx) const noexcept {
+  IRBlockRef block_ref(const BlockIndex idx) const {
     assert(static_cast<u32>(idx) <= block_layout.size());
     if (static_cast<u32>(idx) == block_layout.size()) {
       // this might be called with next_block() which is invalid for the
@@ -102,36 +102,36 @@ struct Analyzer {
     return block_layout[static_cast<u32>(idx)];
   }
 
-  BlockIndex block_idx(IRBlockRef block_ref) const noexcept {
+  BlockIndex block_idx(IRBlockRef block_ref) const {
     return static_cast<BlockIndex>(adaptor->block_info(block_ref));
   }
 
-  const LivenessInfo &liveness_info(const ValLocalIdx val_idx) const noexcept {
+  const LivenessInfo &liveness_info(const ValLocalIdx val_idx) const {
     assert(static_cast<u32>(val_idx) < liveness.size());
     assert(liveness[static_cast<u32>(val_idx)].epoch == liveness_epoch &&
            "access to liveness of ignored value");
     return liveness[static_cast<u32>(val_idx)];
   }
 
-  u32 block_loop_idx(const BlockIndex idx) const noexcept {
+  u32 block_loop_idx(const BlockIndex idx) const {
     return block_loop_map[static_cast<u32>(idx)];
   }
 
-  const Loop &loop_from_idx(const u32 idx) const noexcept { return loops[idx]; }
+  const Loop &loop_from_idx(const u32 idx) const { return loops[idx]; }
 
-  bool block_has_multiple_incoming(const BlockIndex idx) const noexcept {
+  bool block_has_multiple_incoming(const BlockIndex idx) const {
     return block_has_multiple_incoming(block_ref(idx));
   }
 
-  bool block_has_multiple_incoming(IRBlockRef block_ref) const noexcept {
+  bool block_has_multiple_incoming(IRBlockRef block_ref) const {
     return (adaptor->block_info2(block_ref) & 0b11) == 2;
   }
 
-  bool block_has_phis(BlockIndex idx) const noexcept {
+  bool block_has_phis(BlockIndex idx) const {
     return block_has_phis(block_ref(idx));
   }
 
-  bool block_has_phis(IRBlockRef block_ref) const noexcept {
+  bool block_has_phis(IRBlockRef block_ref) const {
     return (adaptor->block_info2(block_ref) & 0b1'0000) != 0;
   }
 
@@ -142,7 +142,7 @@ struct Analyzer {
 
 protected:
   // for use during liveness analysis
-  LivenessInfo &liveness_maybe(const IRValueRef val) noexcept;
+  LivenessInfo &liveness_maybe(const IRValueRef val);
 
   void build_block_layout();
 
@@ -153,16 +153,16 @@ protected:
 
   /// Builds a vector of block references in reverse post-order.
   void build_rpo_block_order(
-      util::SmallVector<IRBlockRef, SMALL_BLOCK_NUM> &out) const noexcept;
+      util::SmallVector<IRBlockRef, SMALL_BLOCK_NUM> &out) const;
 
   /// Creates a bitset of loop_heads and sets the parent loop of each block.
   /// The u32 in loop_parent is an index into block_rpo
   void identify_loops(
       const util::SmallVector<IRBlockRef, SMALL_BLOCK_NUM> &block_rpo,
       util::SmallVector<u32, SMALL_BLOCK_NUM> &loop_parent,
-      util::SmallBitSet<256> &loop_heads) const noexcept;
+      util::SmallBitSet<256> &loop_heads) const;
 
-  void compute_liveness() noexcept;
+  void compute_liveness();
 };
 
 template <IRAdaptor Adaptor>
@@ -233,7 +233,7 @@ void Analyzer<Adaptor>::print_liveness(std::ostream &os) const {
 
 template <IRAdaptor Adaptor>
 typename Analyzer<Adaptor>::LivenessInfo &
-    Analyzer<Adaptor>::liveness_maybe(const IRValueRef val) noexcept {
+    Analyzer<Adaptor>::liveness_maybe(const IRValueRef val) {
   const ValLocalIdx val_idx = adaptor->val_local_idx(val);
   if constexpr (Adaptor::TPDE_PROVIDES_HIGHEST_VAL_IDX) {
     assert(liveness.size() > static_cast<u32>(val_idx));
@@ -401,7 +401,7 @@ void Analyzer<Adaptor>::build_loop_tree_and_block_layout(
 
 template <IRAdaptor Adaptor>
 void Analyzer<Adaptor>::build_rpo_block_order(
-    util::SmallVector<IRBlockRef, SMALL_BLOCK_NUM> &out) const noexcept {
+    util::SmallVector<IRBlockRef, SMALL_BLOCK_NUM> &out) const {
   out.clear();
 
   u32 num_blocks = 0;
@@ -532,14 +532,14 @@ void Analyzer<Adaptor>::build_rpo_block_order(
       adaptor->block_set_info(out[i], i);
     }
 
-#ifndef NDEBUG
-    // In debug builds, reset block index of unreachable blocks.
-    for (IRBlockRef cur : adaptor->cur_blocks()) {
-      if (adaptor->block_info2(cur) == 0) {
-        adaptor->block_set_info(cur, 0xFFFF'FFFF);
+    if constexpr (WithAsserts) {
+      // In debug builds, reset block index of unreachable blocks.
+      for (IRBlockRef cur : adaptor->cur_blocks()) {
+        if (adaptor->block_info2(cur) == 0) {
+          adaptor->block_set_info(cur, 0xFFFF'FFFF);
+        }
       }
     }
-#endif
   }
 
 #ifdef TPDE_LOGGING
@@ -554,7 +554,7 @@ template <IRAdaptor Adaptor>
 void Analyzer<Adaptor>::identify_loops(
     const util::SmallVector<IRBlockRef, SMALL_BLOCK_NUM> &block_rpo,
     util::SmallVector<u32, SMALL_BLOCK_NUM> &loop_parent,
-    util::SmallBitSet<256> &loop_heads) const noexcept {
+    util::SmallBitSet<256> &loop_heads) const {
   loop_parent.clear();
   loop_parent.resize(block_rpo.size());
   loop_heads.clear();
@@ -718,7 +718,7 @@ void Analyzer<Adaptor>::identify_loops(
 }
 
 template <IRAdaptor Adaptor>
-void Analyzer<Adaptor>::compute_liveness() noexcept {
+void Analyzer<Adaptor>::compute_liveness() {
   // implement the liveness algorithm described in
   // http://databasearchitects.blogspot.com/2020/04/linear-time-liveness-analysis.html
   // and Kohn et al.: Adaptive Execution of Compiled Queries
@@ -999,14 +999,14 @@ void Analyzer<Adaptor>::compute_liveness() noexcept {
         loop.definitions_in_childs + loop.definitions;
   }
 
-#ifdef TPDE_ASSERTS
-  // reset the incorrect ref_counts in the liveness infos
-  for (auto &entry : liveness) {
-    if (entry.ref_count == ~0u) {
-      entry.ref_count = 0;
+  if constexpr (WithAsserts) {
+    // reset the incorrect ref_counts in the liveness infos
+    for (auto &entry : liveness) {
+      if (entry.ref_count == ~0u) {
+        entry.ref_count = 0;
+      }
     }
   }
-#endif
 
   TPDE_LOG_TRACE("Finished Liveness Analysis");
 }

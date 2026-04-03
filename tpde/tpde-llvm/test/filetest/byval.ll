@@ -4,6 +4,8 @@
 
 ; RUN: tpde-llc --target=x86_64 %s | %objdump | FileCheck %s -check-prefixes=X64
 ; RUN: tpde-llc --target=aarch64 %s | %objdump | FileCheck %s -check-prefixes=ARM64
+; XFAIL: llvm19.1
+; XFAIL: llvm20.1
 
 %struct.ptr_i32 = type { ptr, i32 }
 define i32 @fn_i32_byval_ptr_i32_i32(ptr byval(%struct.ptr_i32) align 8 %0, i32 %1) {
@@ -38,9 +40,9 @@ define i32 @call_byval(i32 %0) {
 ; X64-NEXT:    mov qword ptr [rsp], rcx
 ; X64-NEXT:    mov rcx, qword ptr [rax + 0x8]
 ; X64-NEXT:    mov qword ptr [rsp + 0x8], rcx
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_i32_byval_ptr_i32_i32-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    add rsp, 0x50
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
@@ -54,7 +56,8 @@ define i32 @call_byval(i32 %0) {
 ; ARM64-NEXT:    str x16, [sp]
 ; ARM64-NEXT:    ldr x16, [x1, #0x8]
 ; ARM64-NEXT:    str x16, [sp, #0x8]
-; ARM64-NEXT:    bl 0x40 <call_byval+0x20>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_i32_byval_ptr_i32_i32
 ; ARM64-NEXT:    add sp, sp, #0x10
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xb0
@@ -120,9 +123,9 @@ define void @call_byval2(ptr %a, ptr %b, ptr %c) {
 ; X64-NEXT:    mov qword ptr [rsp + 0x20], rax
 ; X64-NEXT:    mov rax, qword ptr [rdx + 0x8]
 ; X64-NEXT:    mov qword ptr [rsp + 0x28], rax
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_byval2-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    add rsp, 0x60
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
@@ -141,7 +144,8 @@ define void @call_byval2(ptr %a, ptr %b, ptr %c) {
 ; ARM64-NEXT:    str x16, [sp, #0x20]
 ; ARM64-NEXT:    ldr x16, [x2, #0x8]
 ; ARM64-NEXT:    str x16, [sp, #0x28]
-; ARM64-NEXT:    bl 0xc4 <call_byval2+0x34>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_byval2
 ; ARM64-NEXT:    add sp, sp, #0x30
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
@@ -197,9 +201,9 @@ define void @call_byval3(ptr %a, ptr %b, ptr %c, ptr %d) {
 ; X64-NEXT:    movzx eax, byte ptr [rdx]
 ; X64-NEXT:    mov byte ptr [rsp + 0x10], al
 ; X64-NEXT:    mov rdi, rcx
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_byval3-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    add rsp, 0x40
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
@@ -215,7 +219,8 @@ define void @call_byval3(ptr %a, ptr %b, ptr %c, ptr %d) {
 ; ARM64-NEXT:    ldrb w16, [x2]
 ; ARM64-NEXT:    strb w16, [sp, #0x10]
 ; ARM64-NEXT:    mov x0, x3
-; ARM64-NEXT:    bl 0x138 <call_byval3+0x28>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_byval3
 ; ARM64-NEXT:    add sp, sp, #0x20
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
@@ -275,9 +280,9 @@ define void @call_byval4(ptr %a, ptr %b) {
 ; X64:         push rbp
 ; X64-NEXT:    mov rbp, rsp
 ; X64-NEXT:    sub rsp, 0x30
-; X64-NEXT:  <L0>:
 ; X64-NEXT:    call <L0>
 ; X64-NEXT:     R_X86_64_PLT32 fn_byval4-0x4
+; X64-NEXT:  <L0>:
 ; X64-NEXT:    add rsp, 0x30
 ; X64-NEXT:    pop rbp
 ; X64-NEXT:    ret
@@ -285,7 +290,8 @@ define void @call_byval4(ptr %a, ptr %b) {
 ; ARM64-LABEL: <call_byval4>:
 ; ARM64:         stp x29, x30, [sp, #-0xa0]!
 ; ARM64-NEXT:    mov x29, sp
-; ARM64-NEXT:    bl 0x198 <call_byval4+0x8>
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
 ; ARM64-NEXT:     R_AARCH64_CALL26 fn_byval4
 ; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
 ; ARM64-NEXT:    ret
@@ -319,4 +325,98 @@ define i64 @fn_byval5(ptr byval(i64) %a) {
 bb:
   %r = load i64, ptr %a
   ret i64 %r
+}
+
+define void @fn_byval6(ptr byval([7 x i8]) %a) {
+; X64-LABEL: <fn_byval6>:
+; X64:         ret
+;
+; ARM64-LABEL: <fn_byval6>:
+; ARM64:         mov x17, sp
+; ARM64-NEXT:    add x9, x17, #0x0
+; ARM64-NEXT:    ret
+  ret void
+}
+
+define void @call_byval6(ptr %a) {
+; X64-LABEL: <call_byval6>:
+; X64:         push rbp
+; X64-NEXT:    mov rbp, rsp
+; X64-NEXT:    sub rsp, 0x30
+; X64-NEXT:    mov eax, dword ptr [rdi]
+; X64-NEXT:    mov dword ptr [rsp], eax
+; X64-NEXT:    movzx eax, word ptr [rdi + 0x4]
+; X64-NEXT:    mov word ptr [rsp + 0x4], ax
+; X64-NEXT:    movzx eax, byte ptr [rdi + 0x6]
+; X64-NEXT:    mov byte ptr [rsp + 0x6], al
+; X64-NEXT:    call <L0>
+; X64-NEXT:     R_X86_64_PLT32 fn_byval6-0x4
+; X64-NEXT:  <L0>:
+; X64-NEXT:    add rsp, 0x30
+; X64-NEXT:    pop rbp
+; X64-NEXT:    ret
+;
+; ARM64-LABEL: <call_byval6>:
+; ARM64:         stp x29, x30, [sp, #-0xa0]!
+; ARM64-NEXT:    mov x29, sp
+; ARM64-NEXT:    sub sp, sp, #0x10
+; ARM64-NEXT:    ldr w16, [x0]
+; ARM64-NEXT:    str w16, [sp]
+; ARM64-NEXT:    ldrh w16, [x0, #0x4]
+; ARM64-NEXT:    strh w16, [sp, #0x4]
+; ARM64-NEXT:    ldrb w16, [x0, #0x6]
+; ARM64-NEXT:    strb w16, [sp, #0x6]
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
+; ARM64-NEXT:     R_AARCH64_CALL26 fn_byval6
+; ARM64-NEXT:    add sp, sp, #0x10
+; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
+; ARM64-NEXT:    ret
+  call void @fn_byval6(ptr %a)
+  ret void
+}
+
+define void @fn_byval7(ptr byval([3 x i8]) %a) {
+; X64-LABEL: <fn_byval7>:
+; X64:         ret
+;
+; ARM64-LABEL: <fn_byval7>:
+; ARM64:         mov x17, sp
+; ARM64-NEXT:    add x9, x17, #0x0
+; ARM64-NEXT:    ret
+  ret void
+}
+
+define void @call_byval7(ptr %a) {
+; X64-LABEL: <call_byval7>:
+; X64:         push rbp
+; X64-NEXT:    mov rbp, rsp
+; X64-NEXT:    sub rsp, 0x30
+; X64-NEXT:    movzx eax, word ptr [rdi]
+; X64-NEXT:    mov word ptr [rsp], ax
+; X64-NEXT:    movzx eax, byte ptr [rdi + 0x2]
+; X64-NEXT:    mov byte ptr [rsp + 0x2], al
+; X64-NEXT:    call <L0>
+; X64-NEXT:     R_X86_64_PLT32 fn_byval7-0x4
+; X64-NEXT:  <L0>:
+; X64-NEXT:    add rsp, 0x30
+; X64-NEXT:    pop rbp
+; X64-NEXT:    ret
+;
+; ARM64-LABEL: <call_byval7>:
+; ARM64:         stp x29, x30, [sp, #-0xa0]!
+; ARM64-NEXT:    mov x29, sp
+; ARM64-NEXT:    sub sp, sp, #0x10
+; ARM64-NEXT:    ldrh w16, [x0]
+; ARM64-NEXT:    strh w16, [sp]
+; ARM64-NEXT:    ldrb w16, [x0, #0x2]
+; ARM64-NEXT:    strb w16, [sp, #0x2]
+; ARM64-NEXT:  <L0>:
+; ARM64-NEXT:    bl <L0>
+; ARM64-NEXT:     R_AARCH64_CALL26 fn_byval7
+; ARM64-NEXT:    add sp, sp, #0x10
+; ARM64-NEXT:    ldp x29, x30, [sp], #0xa0
+; ARM64-NEXT:    ret
+  call void @fn_byval7(ptr %a)
+  ret void
 }
