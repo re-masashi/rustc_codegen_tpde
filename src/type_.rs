@@ -15,7 +15,7 @@ use rustc_target::callconv::{CastTarget, FnAbi};
 use crate::abi::{FnAbiLlvmExt, LlvmType};
 use crate::common;
 use crate::context::{CodegenCx, GenericCx, SCx};
-use crate::llvm::{self, FALSE, Metadata, TRUE, ToLlvmBool, Type, Value};
+use crate::llvm::{self, FALSE, TRUE, ToLlvmBool, Type, Value};
 use crate::type_of::LayoutLlvmExt;
 
 impl PartialEq for Type {
@@ -204,7 +204,7 @@ impl<'ll, CX: Borrow<SCx<'ll>>> BaseTypeCodegenMethods for GenericCx<'ll, CX> {
         unsafe { llvm::LLVMFP128TypeInContext(self.llcx()) }
     }
 
-    fn type_func(&self, args: &[&'ll Type], ret: &'ll Type) -> &'ll Type {
+    fn type_func(&self, args: &[&'ll Type], ret: &'ll Type) -> Self::FunctionSignature {
         unsafe { llvm::LLVMFunctionType(ret, args.as_ptr(), args.len() as c_uint, FALSE) }
     }
 
@@ -260,10 +260,10 @@ pub(crate) fn llvm_type_ptr(llcx: &llvm::Context) -> &Type {
     llvm_type_ptr_in_address_space(llcx, AddressSpace::ZERO)
 }
 
-pub(crate) fn llvm_type_ptr_in_address_space<'ll>(
-    llcx: &'ll llvm::Context,
+pub(crate) fn llvm_type_ptr_in_address_space(
+    llcx: &llvm::Context,
     addr_space: AddressSpace,
-) -> &'ll Type {
+) -> &Type {
     llvm::LLVMPointerTypeInContext(llcx, addr_space.0)
 }
 
@@ -288,13 +288,13 @@ impl<'ll, 'tcx> LayoutTypeCodegenMethods<'tcx> for CodegenCx<'ll, 'tcx> {
     ) -> &'ll Type {
         layout.scalar_pair_element_llvm_type(self, index, immediate)
     }
-    fn cast_backend_type(&self, ty: &CastTarget) -> &'ll Type {
+    fn cast_backend_type(&self, ty: &CastTarget) -> Self::FunctionSignature {
         ty.llvm_type(self)
     }
-    fn fn_decl_backend_type(&self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> &'ll Type {
+    fn fn_decl_backend_type(&self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> Self::FunctionSignature {
         fn_abi.llvm_type(self)
     }
-    fn fn_ptr_backend_type(&self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> &'ll Type {
+    fn fn_ptr_backend_type(&self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> Self::FunctionSignature {
         fn_abi.ptr_to_llvm_type(self)
     }
     fn reg_backend_type(&self, ty: &Reg) -> &'ll Type {
@@ -313,10 +313,6 @@ impl<'ll, 'tcx> TypeMembershipCodegenMethods<'tcx> for CodegenCx<'ll, 'tcx> {
         let typeid_metadata = self.create_metadata(typeid);
         let v = [llvm::LLVMValueAsMetadata(self.const_usize(0)), typeid_metadata];
         self.global_set_metadata_node(function, llvm::MD_type, &v);
-    }
-
-    fn typeid_metadata(&self, typeid: &[u8]) -> Option<&'ll Metadata> {
-        Some(self.create_metadata(typeid))
     }
 
     fn add_kcfi_type_metadata(&self, function: &'ll Value, kcfi_typeid: u32) {

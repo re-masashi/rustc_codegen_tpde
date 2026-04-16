@@ -178,7 +178,7 @@ fn check_and_apply_linkage<'ll, 'tcx>(
                 let fn_sig = sig.with(*header);
 
                 let fn_abi = cx.fn_abi_of_fn_ptr(fn_sig, ty::List::empty());
-                cx.declare_fn(sym, &fn_abi, None)
+                cx.declare_fn(sym, fn_abi, None)
             } else {
                 cx.declare_global(sym, cx.type_i8())
             }
@@ -238,10 +238,10 @@ impl<'ll> CodegenCx<'ll, '_> {
         let gv = match kind {
             Some(kind) if !self.tcx.sess.fewer_names() => {
                 let name = self.generate_local_symbol_name(kind);
-                let gv = self.define_global(&name, self.val_ty(cv)).unwrap_or_else(|| {
+
+                self.define_global(&name, self.val_ty(cv)).unwrap_or_else(|| {
                     bug!("symbol `{}` is already defined", name);
-                });
-                gv
+                })
             }
             _ => self.define_global("", self.val_ty(cv)).unwrap_or_else(|| {
                 bug!("anonymous global symbol is already defined");
@@ -321,10 +321,10 @@ impl<'ll> CodegenCx<'ll, '_> {
         debug!(?sym, ?fn_attrs);
 
         let g = if def_id.is_local() && !self.tcx.is_foreign_item(def_id) {
-            if let Some(g) = self.get_declared_value(sym) {
-                if self.val_ty(g) != self.type_ptr() {
-                    span_bug!(self.tcx.def_span(def_id), "Conflicting types for static");
-                }
+            if let Some(g) = self.get_declared_value(sym)
+                && self.val_ty(g) != self.type_ptr()
+            {
+                span_bug!(self.tcx.def_span(def_id), "Conflicting types for static");
             }
 
             let g = self.declare_global(sym, llty);
@@ -751,7 +751,7 @@ impl<'ll> CodegenCx<'ll, '_> {
         let llval = crate::common::named_struct(llty, &[version, size, name, symtab]);
 
         let sym = "OBJC_MODULES";
-        let g = self.define_global(&sym, llty).unwrap_or_else(|| {
+        let g = self.define_global(sym, llty).unwrap_or_else(|| {
             bug!("symbol `{}` is already defined", sym);
         });
         set_global_alignment(self, g, self.tcx.data_layout.pointer_align().abi);
@@ -768,7 +768,10 @@ impl<'ll> StaticCodegenMethods for CodegenCx<'ll, '_> {
     ///
     /// The pointer will always be in the default address space. If global variables default to a
     /// different address space, an addrspacecast is inserted.
-    fn static_addr_of(&self, cv: &'ll Value, align: Align, kind: Option<&str>) -> &'ll Value {
+    fn static_addr_of(&self, alloc: ConstAllocation<'_>, kind: Option<&str>) -> &'ll Value {
+        let cv = const_alloc_to_llvm(self, alloc.inner(), /*static*/ false);
+        // Compute alignment from the value
+        let align = Align::ONE; // TODO: Compute proper alignment from cv
         let gv = self.static_addr_of_impl(cv, align, kind);
         // static_addr_of_impl returns the bare global variable, which might not be in the default
         // address space. Cast to the default address space if necessary.

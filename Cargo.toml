@@ -24,3 +24,11 @@ llvm_enzyme = []
 
 [package.metadata.rust-analyzer]
 rustc_private = true
+
+[dependencies]
+# tidy-alphabetical-start
+gimli = "0.31"
+libc = "0.2"
+object = "0.36"
+rustc-demangle = "0.1"
+# tidy-alphabetical-end

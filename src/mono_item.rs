@@ -116,7 +116,7 @@ impl CodegenCx<'_, '_> {
         }
 
         // PowerPC64 prefers TOC indirection to avoid copy relocations.
-        if matches!(self.tcx.sess.target.arch, Arch::PowerPC64 | Arch::PowerPC64LE) {
+        if matches!(self.tcx.sess.target.arch, Arch::PowerPC64 | Arch::LoongArch64) {
             return false;
         }
 

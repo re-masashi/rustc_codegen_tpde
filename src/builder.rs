@@ -74,7 +74,7 @@ impl<'a, 'll> SBuilder<'a, 'll> {
             bundles.push(funclet_bundle);
         }
 
-        let call = unsafe {
+        (unsafe {
             llvm::LLVMBuildCallWithOperandBundles(
                 self.llbuilder,
                 llty,
@@ -85,8 +85,7 @@ impl<'a, 'll> SBuilder<'a, 'll> {
                 bundles.len() as c_uint,
                 c"".as_ptr(),
             )
-        };
-        call
+        }) as _
     }
 }
 
@@ -130,9 +129,9 @@ impl<'a, 'll, CX: Borrow<SCx<'ll>>> GenericBuilder<'a, 'll, CX> {
             // Cast to default addrspace if necessary
             llvm::LLVMBuildPointerCast(self.llbuilder, alloca, self.cx.type_ptr(), UNNAMED)
         };
-        if name != "" {
+        if !name.is_empty() {
             let name = std::ffi::CString::new(name).unwrap();
-            llvm::set_value_name(val, &name.as_bytes());
+            llvm::set_value_name(val, name.as_bytes());
         }
         val
     }
@@ -195,11 +194,11 @@ pub(crate) const UNNAMED: *const c_char = c"".as_ptr();
 
 impl<'ll, CX: Borrow<SCx<'ll>>> BackendTypes for GenericBuilder<'_, 'll, CX> {
     type Value = <GenericCx<'ll, CX> as BackendTypes>::Value;
-    type Metadata = <GenericCx<'ll, CX> as BackendTypes>::Metadata;
     type Function = <GenericCx<'ll, CX> as BackendTypes>::Function;
     type BasicBlock = <GenericCx<'ll, CX> as BackendTypes>::BasicBlock;
     type Type = <GenericCx<'ll, CX> as BackendTypes>::Type;
     type Funclet = <GenericCx<'ll, CX> as BackendTypes>::Funclet;
+    type FunctionSignature = <GenericCx<'ll, CX> as BackendTypes>::FunctionSignature;
 
     type DIScope = <GenericCx<'ll, CX> as BackendTypes>::DIScope;
     type DILocation = <GenericCx<'ll, CX> as BackendTypes>::DILocation;
@@ -702,20 +701,18 @@ impl<'a, 'll, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
             }
         }
 
-        let val = if let Some(_) = place.val.llextra {
+        let val = if place.val.llextra.is_some() {
             // FIXME: Merge with the `else` below?
             OperandValue::Ref(place.val)
         } else if place.layout.is_llvm_immediate() {
             let mut const_llval = None;
             let llty = place.layout.llvm_type(self);
-            if let Some(global) = llvm::LLVMIsAGlobalVariable(place.val.llval) {
-                if llvm::LLVMIsGlobalConstant(global).is_true() {
-                    if let Some(init) = llvm::LLVMGetInitializer(global) {
-                        if self.val_ty(init) == llty {
-                            const_llval = Some(init);
-                        }
-                    }
-                }
+            if let Some(global) = llvm::LLVMIsAGlobalVariable(place.val.llval)
+                && llvm::LLVMIsGlobalConstant(global).is_true()
+                && let Some(init) = llvm::LLVMGetInitializer(global)
+                && self.val_ty(init) == llty
+            {
+                const_llval = Some(init);
             }
 
             let llval = const_llval.unwrap_or_else(|| {
@@ -1409,7 +1406,7 @@ impl<'a, 'll, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
                 // If there is an inline attribute and a target feature that matches
                 // we will add the attribute to the callsite otherwise we'll omit
                 // this and not add the attribute to prevent soundness issues.
-                && let Some(inlining_rule) = attributes::inline_attr(&self.cx, self.cx.tcx, instance)
+                && let Some(inlining_rule) = attributes::inline_attr(self.cx, self.cx.tcx, instance)
                 && self.cx.tcx.is_target_feature_call_safe(
                     &fn_call_attrs.target_features,
                     &fn_defn_attrs.target_features,
@@ -1456,6 +1453,14 @@ impl<'a, 'll, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
         // Cleanup is always the cold path.
         let cold_inline = llvm::AttributeKind::Cold.create_attr(self.llcx);
         attributes::apply_to_callsite(llret, llvm::AttributePlace::Function, &[cold_inline]);
+    }
+
+    fn scalable_alloca(&mut self, _elt: u64, _align: Align, _element_ty: Ty<'_>) -> &'ll Value {
+        unimplemented!("scalable_alloca is not supported")
+    }
+
+    fn get_funclet_cleanuppad(&self, _funclet: &Self::Funclet) -> &'ll Value {
+        unimplemented!("get_funclet_cleanuppad is not supported")
     }
 }
 
@@ -1911,7 +1916,8 @@ impl<'a, 'll, 'tcx> Builder<'a, 'll, 'tcx> {
         llfn: &'ll Value,
     ) -> Option<llvm::OperandBundleBox<'ll>> {
         let is_indirect_call = unsafe { llvm::LLVMRustIsNonGVFunctionPointerTy(llfn) };
-        let kcfi_bundle = if self.tcx.sess.is_sanitizer_kcfi_enabled()
+
+        if self.tcx.sess.is_sanitizer_kcfi_enabled()
             && let Some(fn_abi) = fn_abi
             && is_indirect_call
         {
@@ -1938,8 +1944,7 @@ impl<'a, 'll, 'tcx> Builder<'a, 'll, 'tcx> {
             Some(llvm::OperandBundleBox::new("kcfi", &[self.const_u32(kcfi_typeid)]))
         } else {
             None
-        };
-        kcfi_bundle
+        }
     }
 
     /// Emits a call to `llvm.instrprof.increment`. Used by coverage instrumentation.

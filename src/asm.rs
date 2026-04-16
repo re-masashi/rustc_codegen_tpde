@@ -1,4 +1,4 @@
-use std::assert_matches::assert_matches;
+use std::assert_matches;
 
 use rustc_abi::{BackendRepr, Float, Integer, Primitive, Scalar};
 use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece};
@@ -707,6 +707,9 @@ fn reg_to_llvm(reg: InlineAsmRegOrRegClass, layout: Option<&TyAndLayout<'_>>) ->
             CSKY(CSKYInlineAsmRegClass::freg) => "f",
             SpirV(SpirVInlineAsmRegClass::reg) => bug!("LLVM backend does not support SPIR-V"),
             Err => unreachable!(),
+            rustc_target::asm::InlineAsmRegClass::PowerPC(_) => {
+                panic!("PowerPC inline assembly not fully supported")
+            }
         }
         .to_string(),
     }
@@ -804,6 +807,9 @@ fn modifier_to_llvm(
         M68k(_) => None,
         CSKY(_) => None,
         Err => unreachable!(),
+        rustc_target::asm::InlineAsmRegClass::PowerPC(_) => {
+            panic!("PowerPC inline assembly not fully supported")
+        }
     }
 }
 
@@ -886,6 +892,9 @@ fn dummy_output_type<'ll>(cx: &CodegenCx<'ll, '_>, reg: InlineAsmRegClass) -> &'
         CSKY(CSKYInlineAsmRegClass::freg) => cx.type_f32(),
         SpirV(SpirVInlineAsmRegClass::reg) => bug!("LLVM backend does not support SPIR-V"),
         Err => unreachable!(),
+        rustc_target::asm::InlineAsmRegClass::PowerPC(_) => {
+            panic!("PowerPC inline assembly not fully supported")
+        }
     }
 }
 

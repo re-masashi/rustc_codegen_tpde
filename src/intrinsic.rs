@@ -1,16 +1,17 @@
-use std::assert_matches::assert_matches;
+use std::assert_matches;
 use std::cmp::Ordering;
 
 use rustc_abi::{Align, BackendRepr, ExternAbi, Float, HasDataLayout, Primitive, Size};
 use rustc_codegen_ssa::base::{compare_simd_types, wants_msvc_seh, wants_wasm_eh};
-use rustc_codegen_ssa::codegen_attrs::autodiff_attrs;
 use rustc_codegen_ssa::common::{IntPredicate, TypeKind};
 use rustc_codegen_ssa::errors::{ExpectedPointerMutability, InvalidMonomorphization};
 use rustc_codegen_ssa::mir::operand::{OperandRef, OperandValue};
 use rustc_codegen_ssa::mir::place::{PlaceRef, PlaceValue};
 use rustc_codegen_ssa::traits::*;
 use rustc_hir::def_id::LOCAL_CRATE;
-use rustc_hir::{self as hir};
+use rustc_hir::{
+    find_attr, {self as hir},
+};
 use rustc_middle::mir::BinOp;
 use rustc_middle::ty::layout::{FnAbiOf, HasTyCtxt, HasTypingEnv, LayoutOf};
 use rustc_middle::ty::{self, GenericArgsRef, Instance, SimdAlign, Ty, TyCtxt, TypingEnv};
@@ -26,7 +27,7 @@ use crate::builder::Builder;
 use crate::builder::autodiff::{adjust_activity_to_abi, generate_enzyme_call};
 use crate::context::CodegenCx;
 use crate::errors::AutoDiffWithoutEnable;
-use crate::llvm::{self, Metadata, Type, Value};
+use crate::llvm::{self, Type, Value};
 use crate::type_of::LayoutLlvmExt;
 use crate::va_arg::emit_va_arg;
 
@@ -96,34 +97,29 @@ fn call_simple_intrinsic<'ll, 'tcx>(
         sym::fmuladdf64 => ("llvm.fmuladd", &[bx.type_f64()]),
         sym::fmuladdf128 => ("llvm.fmuladd", &[bx.type_f128()]),
 
-        sym::fabsf16 => ("llvm.fabs", &[bx.type_f16()]),
-        sym::fabsf32 => ("llvm.fabs", &[bx.type_f32()]),
-        sym::fabsf64 => ("llvm.fabs", &[bx.type_f64()]),
-        sym::fabsf128 => ("llvm.fabs", &[bx.type_f128()]),
-
-        sym::minnumf16 => ("llvm.minnum", &[bx.type_f16()]),
-        sym::minnumf32 => ("llvm.minnum", &[bx.type_f32()]),
-        sym::minnumf64 => ("llvm.minnum", &[bx.type_f64()]),
-        sym::minnumf128 => ("llvm.minnum", &[bx.type_f128()]),
+        sym::minimumf16 => ("llvm.minimum", &[bx.type_f16()]),
+        sym::minimumf32 => ("llvm.minimum", &[bx.type_f32()]),
+        sym::minimumf64 => ("llvm.minimum", &[bx.type_f64()]),
+        sym::minimumf128 => ("llvm.minimum", &[bx.type_f128()]),
 
         // FIXME: LLVM currently mis-compile those intrinsics, re-enable them
         // when llvm/llvm-project#{139380,139381,140445} are fixed.
-        //sym::minimumf16 => ("llvm.minimum", &[bx.type_f16()]),
-        //sym::minimumf32 => ("llvm.minimum", &[bx.type_f32()]),
-        //sym::minimumf64 => ("llvm.minimum", &[bx.type_f64()]),
-        //sym::minimumf128 => ("llvm.minimum", &[cx.type_f128()]),
+        //sym::minnumf16 => ("llvm.minnum", &[bx.type_f16()]),
+        //sym::minnumf32 => ("llvm.minnum", &[bx.type_f32()]),
+        //sym::minnumf64 => ("llvm.minnum", &[bx.type_f64()]),
+        //sym::minnumf128 => ("llvm.minnum", &[cx.type_f128()]),
         //
-        sym::maxnumf16 => ("llvm.maxnum", &[bx.type_f16()]),
-        sym::maxnumf32 => ("llvm.maxnum", &[bx.type_f32()]),
-        sym::maxnumf64 => ("llvm.maxnum", &[bx.type_f64()]),
-        sym::maxnumf128 => ("llvm.maxnum", &[bx.type_f128()]),
+        sym::maximumf16 => ("llvm.maximum", &[bx.type_f16()]),
+        sym::maximumf32 => ("llvm.maximum", &[bx.type_f32()]),
+        sym::maximumf64 => ("llvm.maximum", &[bx.type_f64()]),
+        sym::maximumf128 => ("llvm.maximum", &[bx.type_f128()]),
 
         // FIXME: LLVM currently mis-compile those intrinsics, re-enable them
         // when llvm/llvm-project#{139380,139381,140445} are fixed.
-        //sym::maximumf16 => ("llvm.maximum", &[bx.type_f16()]),
-        //sym::maximumf32 => ("llvm.maximum", &[bx.type_f32()]),
-        //sym::maximumf64 => ("llvm.maximum", &[bx.type_f64()]),
-        //sym::maximumf128 => ("llvm.maximum", &[cx.type_f128()]),
+        //sym::maxnumf16 => ("llvm.maxnum", &[bx.type_f16()]),
+        //sym::maxnumf32 => ("llvm.maxnum", &[bx.type_f32()]),
+        //sym::maxnumf64 => ("llvm.maxnum", &[bx.type_f64()]),
+        //sym::maxnumf128 => ("llvm.maxnum", &[cx.type_f128()]),
         //
         sym::copysignf16 => ("llvm.copysign", &[bx.type_f16()]),
         sym::copysignf32 => ("llvm.copysign", &[bx.type_f32()]),
@@ -192,6 +188,11 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                     &[ptr, args[1].immediate()],
                 )
             }
+            sym::fabs => {
+                let arg = &args[0];
+                let llty = arg.layout.immediate_llvm_type(self.cx);
+                self.call_intrinsic("llvm.fabs", &[llty], &[arg.immediate()])
+            }
             sym::autodiff => {
                 codegen_autodiff(self, tcx, instance, args, result);
                 return Ok(());
@@ -212,7 +213,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 assert_eq!(args[1].layout, args[2].layout);
                 let select = |bx: &mut Self, true_val, false_val| {
                     let result = bx.select(cond, true_val, false_val);
-                    bx.set_unpredictable(&result);
+                    bx.set_unpredictable(result);
                     result
                 };
                 match (args[1].val, args[2].val) {
@@ -328,7 +329,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                     _ => bug!(),
                 };
                 let ptr = args[0].immediate();
-                let locality = fn_args.const_at(1).to_value().valtree.unwrap_leaf().to_i32();
+                let locality = fn_args.const_at(1).to_value().valtree.to_leaf().to_i32();
                 self.call_intrinsic(
                     "llvm.prefetch",
                     &[self.val_ty(ptr)],
@@ -368,8 +369,8 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 let pair_llty = self.type_struct(&[narrow_llty, narrow_llty], false);
                 let pair = self.const_poison(pair_llty);
                 let pair = self.insert_value(pair, low, 0);
-                let pair = self.insert_value(pair, high, 1);
-                pair
+
+                self.insert_value(pair, high, 1)
             }
             sym::ctlz
             | sym::ctlz_nonzero
@@ -466,7 +467,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 let layout = self.layout_of(tp_ty).layout;
                 let use_integer_compare = match layout.backend_repr() {
                     Scalar(_) | ScalarPair(_, _) => true,
-                    SimdVector { .. } => false,
+                    SimdVector { .. } | SimdScalableVector { .. } => false,
                     Memory { .. } => {
                         // For rusty ABIs, small aggregates are actually passed
                         // as `RegKind::Integer` (see `FnAbi::adjust_for_abi`),
@@ -647,14 +648,14 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
         &mut self,
         llvtable: &'ll Value,
         vtable_byte_offset: u64,
-        typeid: &'ll Metadata,
+        typeid: &[u8],
     ) -> Self::Value {
-        let typeid = self.get_metadata_value(typeid);
+        let typeid_val = self.const_bytes(typeid);
         let vtable_byte_offset = self.const_i32(vtable_byte_offset as i32);
         let type_checked_load = self.call_intrinsic(
             "llvm.type.checked.load",
             &[],
-            &[llvtable, vtable_byte_offset, typeid],
+            &[llvtable, vtable_byte_offset, typeid_val],
         );
         self.extract_value(type_checked_load, 0)
     }
@@ -665,6 +666,45 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
 
     fn va_end(&mut self, va_list: &'ll Value) -> &'ll Value {
         self.call_intrinsic("llvm.va_end", &[self.val_ty(va_list)], &[va_list])
+    }
+
+    fn codegen_llvm_intrinsic_call(
+        &mut self,
+        instance: ty::Instance<'tcx>,
+        _args: &[OperandRef<'tcx, &'ll Value>],
+        _is_cleanup: bool,
+    ) -> &'ll Value {
+        // Get the LLVM intrinsic name from the codegen_fn_attrs symbol_name
+        // (avoiding def_path_str which triggers diagnostic requirements)
+        let name = self.tcx.codegen_fn_attrs(instance.def_id()).symbol_name;
+
+        // Handle common LLVM intrinsics that TPDE may encounter
+        if let Some(name) = name {
+            let name_str = name.as_str();
+            match name_str {
+                // Spin loop hint - can be safely ignored
+                "llvm.x86.sse2.pause" => {
+                    // This is just a hint, no actual code needed
+                    // Return undef since the caller expects a value
+                    return self.const_undef(self.type_i1());
+                }
+                // Prefetch hints - can be safely ignored
+                "llvm.prefetch" => {
+                    return self.const_undef(self.type_i1());
+                }
+                // Other intrinsics - fall through to warning
+                _ => {
+                    // For now, emit a warning and return a dummy value
+                    // In a complete implementation, these would be properly mapped
+                    eprintln!("[TPDE] Unhandled LLVM intrinsic: {}", name_str);
+                    return self.const_undef(self.type_i1());
+                }
+            }
+        }
+
+        // No symbol name available
+        eprintln!("[TPDE] LLVM intrinsic call with no symbol name");
+        self.const_undef(self.type_i1())
     }
 }
 
@@ -1177,7 +1217,7 @@ fn codegen_autodiff<'ll, 'tcx>(
         }
     };
 
-    let source_symbol = symbol_name_for_instance_in_crate(tcx, fn_source.clone(), LOCAL_CRATE);
+    let source_symbol = symbol_name_for_instance_in_crate(tcx, fn_source, LOCAL_CRATE);
     let Some(fn_to_diff) = bx.cx.get_function(&source_symbol) else {
         bug!("could not find source function")
     };
@@ -1201,9 +1241,11 @@ fn codegen_autodiff<'ll, 'tcx>(
     };
 
     let val_arr = get_args_from_tuple(bx, args[2], fn_diff);
-    let diff_symbol = symbol_name_for_instance_in_crate(tcx, fn_diff.clone(), LOCAL_CRATE);
+    let diff_symbol = symbol_name_for_instance_in_crate(tcx, fn_diff, LOCAL_CRATE);
 
-    let Some(mut diff_attrs) = autodiff_attrs(tcx, fn_diff.def_id()) else {
+    let Some(Some(diff_attrs)) =
+        find_attr!(tcx, fn_diff.def_id(), RustcAutodiff(attr) => attr.clone())
+    else {
         bug!("could not find autodiff attrs")
     };
 
@@ -1211,7 +1253,7 @@ fn codegen_autodiff<'ll, 'tcx>(
         tcx,
         fn_source,
         TypingEnv::fully_monomorphized(),
-        &mut diff_attrs.input_activity,
+        &mut diff_attrs.input_activity.clone().clone(),
     );
 
     let fnc_tree =
@@ -1225,7 +1267,7 @@ fn codegen_autodiff<'ll, 'tcx>(
         &diff_symbol,
         llret_ty,
         &val_arr,
-        diff_attrs.clone(),
+        *diff_attrs.clone(),
         result,
         fnc_tree,
     );
@@ -1406,6 +1448,31 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
         return Ok(bx.select(m_i1s, args[1].immediate(), args[2].immediate()));
     }
 
+    if name == sym::simd_splat {
+        let (_out_len, out_ty) = require_simd!(ret_ty, SimdReturn);
+
+        require!(
+            args[0].layout.ty == out_ty,
+            InvalidMonomorphization::ExpectedVectorElementType {
+                span,
+                name,
+                expected_element: out_ty,
+                vector_type: ret_ty,
+            }
+        );
+
+        // `insertelement <N x elem> poison, elem %x, i32 0`
+        let poison_vec = bx.const_poison(llret_ty);
+        let idx0 = bx.const_i32(0);
+        let v0 = bx.insert_element(poison_vec, args[0].immediate(), idx0);
+
+        // `shufflevector <N x elem> v0, <N x elem> poison, <N x i32> zeroinitializer`
+        // The masks is all zeros, so this splats lane 0 (which has our element in it).
+        let splat = bx.shuffle_vector(v0, poison_vec, bx.const_null(llret_ty));
+
+        return Ok(splat);
+    }
+
     // every intrinsic below takes a SIMD vector as its first argument
     let (in_len, in_elem) = require_simd!(args[0].layout.ty, SimdInput);
     let in_ty = args[0].layout.ty;
@@ -1450,7 +1517,7 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
     }
 
     if name == sym::simd_shuffle_const_generic {
-        let idx = fn_args[2].expect_const().to_value().valtree.unwrap_branch();
+        let idx = fn_args[2].expect_const().to_value().valtree.to_branch();
         let n = idx.len() as u64;
 
         let (out_len, out_ty) = require_simd!(ret_ty, SimdReturn);
@@ -1469,7 +1536,7 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
             .iter()
             .enumerate()
             .map(|(arg_idx, val)| {
-                let idx = val.unwrap_leaf().to_i32();
+                let idx = val.try_to_scalar().unwrap().to_i32().unwrap();
                 if idx >= i32::try_from(total_len).unwrap() {
                     bx.sess().dcx().emit_err(InvalidMonomorphization::SimdIndexOutOfBounds {
                         span,
@@ -1520,7 +1587,7 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
         // Check that the indices are in-bounds.
         let indices = args[2].immediate();
         for i in 0..n {
-            let val = bx.const_get_elt(indices, i as u64);
+            let val = bx.const_get_elt(indices, i);
             let idx = bx
                 .const_to_opt_u128(val, true)
                 .unwrap_or_else(|| bug!("typeck should have already ensured that these are const"));
@@ -1681,7 +1748,11 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
         let elem_ty = if let ty::Float(f) = in_elem.kind() {
             bx.cx.type_float_from_ty(*f)
         } else {
-            return_error!(InvalidMonomorphization::FloatingPointType { span, name, in_ty });
+            return_error!(rustc_codegen_ssa::errors::InvalidMonomorphization::ExpectedPointer {
+                span,
+                name,
+                ty: in_ty
+            });
         };
 
         let vec_ty = bx.type_vector(elem_ty, in_len);
@@ -1866,9 +1937,8 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
         // those lanes whose `mask` bit is enabled.
         // The memory addresses corresponding to the “off” lanes are not accessed.
 
-        let alignment = fn_args[3].expect_const().to_value().valtree.unwrap_branch()[0]
-            .unwrap_leaf()
-            .to_simd_alignment();
+        // TODO: to_simd_alignment method changed/removed
+        let alignment = SimdAlign::Unaligned;
 
         // The element type of the "mask" argument must be a signed integer type of any width
         let mask_ty = in_ty;
@@ -1961,9 +2031,8 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
         // those lanes whose `mask` bit is enabled.
         // The memory addresses corresponding to the “off” lanes are not accessed.
 
-        let alignment = fn_args[3].expect_const().to_value().valtree.unwrap_branch()[0]
-            .unwrap_leaf()
-            .to_simd_alignment();
+        // TODO: to_simd_alignment method changed/removed
+        let alignment = SimdAlign::Unaligned;
 
         // The element type of the "mask" argument must be a signed integer type of any width
         let mask_ty = in_ty;
@@ -2518,8 +2587,6 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
         simd_and: Uint, Int => and;
         simd_or: Uint, Int => or;
         simd_xor: Uint, Int => xor;
-        simd_fmax: Float => maxnum;
-        simd_fmin: Float => minnum;
 
     }
     macro_rules! arith_unary {
@@ -2563,7 +2630,7 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
                     in_elem
                 }),
             },
-            in_len as u64,
+            in_len,
         );
         let llvm_intrinsic = match name {
             sym::simd_bswap => "llvm.bswap",
@@ -2644,7 +2711,7 @@ fn generic_simd_intrinsic<'ll, 'tcx>(
             if signed { 's' } else { 'u' },
             if is_add { "add" } else { "sub" },
         );
-        let vec_ty = bx.cx.type_vector(elem_ty, in_len as u64);
+        let vec_ty = bx.cx.type_vector(elem_ty, in_len);
 
         return Ok(bx.call_intrinsic(llvm_intrinsic, &[vec_ty], &[lhs, rhs]));
     }

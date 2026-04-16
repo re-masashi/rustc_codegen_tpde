@@ -425,13 +425,13 @@ pub(crate) fn add_module_flag_str(
     }
 }
 
-pub(crate) fn set_dllimport_storage_class<'ll>(v: &'ll Value) {
+pub(crate) fn set_dllimport_storage_class(v: &Value) {
     unsafe {
         LLVMSetDLLStorageClass(v, DLLStorageClass::DllImport);
     }
 }
 
-pub(crate) fn set_dso_local<'ll>(v: &'ll Value) {
+pub(crate) fn set_dso_local(v: &Value) {
     unsafe {
         LLVMRustSetDSOLocal(v, true);
     }
@@ -439,7 +439,7 @@ pub(crate) fn set_dso_local<'ll>(v: &'ll Value) {
 
 /// Safe wrapper for `LLVMAppendModuleInlineAsm`, which delegates to
 /// `Module::appendModuleInlineAsm`.
-pub(crate) fn append_module_inline_asm<'ll>(llmod: &'ll Module, asm: &[u8]) {
+pub(crate) fn append_module_inline_asm(llmod: &Module, asm: &[u8]) {
     unsafe {
         LLVMAppendModuleInlineAsm(llmod, asm.as_ptr(), asm.len());
     }

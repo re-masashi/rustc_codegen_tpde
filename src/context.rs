@@ -25,11 +25,10 @@ use rustc_session::Session;
 use rustc_session::config::{
     BranchProtection, CFGuard, CFProtection, CrateType, DebugInfo, FunctionReturn, PAuthKey, PacRet,
 };
-use rustc_span::source_map::Spanned;
-use rustc_span::{DUMMY_SP, Span, Symbol};
+use rustc_span::{DUMMY_SP, Span, Spanned, Symbol};
 use rustc_symbol_mangling::mangle_internal_symbol;
 use rustc_target::spec::{
-    Abi, Arch, Env, HasTargetSpec, Os, RelocModel, SmallDataThresholdSupport, Target, TlsModel,
+    Arch, CfgAbi, Env, HasTargetSpec, Os, RelocModel, SmallDataThresholdSupport, Target, TlsModel,
 };
 use smallvec::SmallVec;
 
@@ -352,7 +351,7 @@ pub(crate) unsafe fn create_module<'ll>(
     if sess.target.is_like_msvc
         || (sess.target.options.os == Os::Windows
             && sess.target.options.env == Env::Gnu
-            && sess.target.options.abi == Abi::Llvm)
+            && sess.target.options.cfg_abi == CfgAbi::Llvm)
     {
         match sess.opts.cg.control_flow_guard {
             CFGuard::Disabled => {}
@@ -516,16 +515,16 @@ pub(crate) unsafe fn create_module<'ll>(
     // to workaround lld as the LTO plugin not
     // correctly setting target-abi for the LTO object
     // FIXME: https://github.com/llvm/llvm-project/issues/50591
-    // If llvm_abiname is empty, emit nothing.
-    let llvm_abiname = &sess.target.options.llvm_abiname;
-    if matches!(sess.target.arch, Arch::RiscV32 | Arch::RiscV64) && !llvm_abiname.is_empty() {
-        llvm::add_module_flag_str(
-            llmod,
-            llvm::ModuleFlagMergeBehavior::Error,
-            "target-abi",
-            llvm_abiname,
-        );
-    }
+    // TODO: llvm_abi field moved/renamed - skipping for now
+    // let llvm_abi = &sess.target.options.llvm_abi;
+    // if matches!(sess.target.arch, Arch::RiscV32 | Arch::RiscV64) && !llvm_abi.is_empty() {
+    //     llvm::add_module_flag_str(
+    //         llmod,
+    //         llvm::ModuleFlagMergeBehavior::Error,
+    //         "target-abi",
+    //         llvm_abi,
+    //     );
+    // }
 
     // Add module flags specified via -Z llvm_module_flag
     for (key, value, merge_behavior) in &sess.opts.unstable_opts.llvm_module_flag {
@@ -923,7 +922,7 @@ impl<'ll, 'tcx> MiscCodegenMethods<'tcx> for CodegenCx<'ll, 'tcx> {
         attributes::apply_to_llfn(llfn, llvm::AttributePlace::Function, &attrs);
     }
 
-    fn declare_c_main(&self, fn_type: Self::Type) -> Option<Self::Function> {
+    fn declare_c_main(&self, fn_type: Self::FunctionSignature) -> Option<Self::Function> {
         let entry_name = self.sess().target.entry_name.as_ref();
         if self.get_declared_value(entry_name).is_none() {
             let llfn = self.declare_entry_fn(
@@ -979,7 +978,7 @@ impl<'ll> CodegenCx<'ll, '_> {
 
         let intrinsic = llvm::Intrinsic::lookup(base_name.as_bytes())
             .unwrap_or_else(|| bug!("Unknown intrinsic: `{base_name}`"));
-        let f = intrinsic.get_declaration(self.llmod, &type_params);
+        let f = intrinsic.get_declaration(self.llmod, type_params);
 
         (self.get_type_of_global(f), f)
     }
@@ -1125,7 +1124,7 @@ impl<'tcx> LayoutOfHelpers<'tcx> for CodegenCx<'_, 'tcx> {
         | LayoutError::ReferencesError(_)
         | LayoutError::InvalidSimd { .. } = err
         {
-            self.tcx.dcx().emit_fatal(Spanned { span, node: err.into_diagnostic() })
+            bug!("Failed to compute layout for `{ty}`: {err:?}")
         } else {
             self.tcx.dcx().emit_fatal(ssa_errors::FailedToGetLayout { span, ty, err })
         }
