@@ -1,9 +1,10 @@
 use std::ptr;
 
-use rustc_ast::expand::autodiff_attrs::{AutoDiffAttrs, DiffActivity, DiffMode};
+use rustc_ast::expand::autodiff_attrs::{DiffActivity, DiffMode};
 use rustc_ast::expand::typetree::FncTree;
 use rustc_codegen_ssa::common::TypeKind;
 use rustc_codegen_ssa::traits::{BaseTypeCodegenMethods, BuilderMethods};
+use rustc_hir::attrs::RustcAutodiff;
 use rustc_middle::ty::{Instance, PseudoCanonicalInput, TyCtxt, TypingEnv};
 use rustc_middle::{bug, ty};
 use rustc_target::callconv::PassMode;
@@ -18,7 +19,7 @@ pub(crate) fn adjust_activity_to_abi<'tcx>(
     tcx: TyCtxt<'tcx>,
     instance: Instance<'tcx>,
     typing_env: TypingEnv<'tcx>,
-    da: &mut Vec<DiffActivity>,
+    da: &mut rustc_data_structures::thin_vec::ThinVec<DiffActivity>,
 ) {
     let fn_ty = instance.ty(tcx, typing_env);
 
@@ -41,55 +42,51 @@ pub(crate) fn adjust_activity_to_abi<'tcx>(
     let mut new_positions = vec![];
     let mut del_activities = 0;
     for (i, ty) in sig.inputs().iter().enumerate() {
-        if let Some(inner_ty) = ty.builtin_deref(true) {
-            if inner_ty.is_slice() {
-                // Now we need to figure out the size of each slice element in memory to allow
-                // safety checks and usability improvements in the backend.
-                let sty = match inner_ty.builtin_index() {
-                    Some(sty) => sty,
-                    None => {
-                        panic!("slice element type unknown");
-                    }
-                };
-                let pci = PseudoCanonicalInput {
-                    typing_env: TypingEnv::fully_monomorphized(),
-                    value: sty,
-                };
-
-                let layout = tcx.layout_of(pci);
-                let elem_size = match layout {
-                    Ok(layout) => layout.size,
-                    Err(_) => {
-                        bug!("autodiff failed to compute slice element size");
-                    }
-                };
-                let elem_size: u32 = elem_size.bytes() as u32;
-
-                // We know that the length will be passed as extra arg.
-                if !da.is_empty() {
-                    // We are looking at a slice. The length of that slice will become an
-                    // extra integer on llvm level. Integers are always const.
-                    // However, if the slice get's duplicated, we want to know to later check the
-                    // size. So we mark the new size argument as FakeActivitySize.
-                    // There is one FakeActivitySize per slice, so for convenience we store the
-                    // slice element size in bytes in it. We will use the size in the backend.
-                    let activity = match da[i] {
-                        DiffActivity::DualOnly
-                        | DiffActivity::Dual
-                        | DiffActivity::Dualv
-                        | DiffActivity::DuplicatedOnly
-                        | DiffActivity::Duplicated => {
-                            DiffActivity::FakeActivitySize(Some(elem_size))
-                        }
-                        DiffActivity::Const => DiffActivity::Const,
-                        _ => bug!("unexpected activity for ptr/ref"),
-                    };
-                    new_activities.push(activity);
-                    new_positions.push(i + 1);
+        if let Some(inner_ty) = ty.builtin_deref(true)
+            && inner_ty.is_slice()
+        {
+            // Now we need to figure out the size of each slice element in memory to allow
+            // safety checks and usability improvements in the backend.
+            let sty = match inner_ty.builtin_index() {
+                Some(sty) => sty,
+                None => {
+                    panic!("slice element type unknown");
                 }
+            };
+            let pci =
+                PseudoCanonicalInput { typing_env: TypingEnv::fully_monomorphized(), value: sty };
 
-                continue;
+            let layout = tcx.layout_of(pci);
+            let elem_size = match layout {
+                Ok(layout) => layout.size,
+                Err(_) => {
+                    bug!("autodiff failed to compute slice element size");
+                }
+            };
+            let elem_size: u32 = elem_size.bytes() as u32;
+
+            // We know that the length will be passed as extra arg.
+            if !da.is_empty() {
+                // We are looking at a slice. The length of that slice will become an
+                // extra integer on llvm level. Integers are always const.
+                // However, if the slice get's duplicated, we want to know to later check the
+                // size. So we mark the new size argument as FakeActivitySize.
+                // There is one FakeActivitySize per slice, so for convenience we store the
+                // slice element size in bytes in it. We will use the size in the backend.
+                let activity = match da[i] {
+                    DiffActivity::DualOnly
+                    | DiffActivity::Dual
+                    | DiffActivity::Dualv
+                    | DiffActivity::DuplicatedOnly
+                    | DiffActivity::Duplicated => DiffActivity::FakeActivitySize(Some(elem_size)),
+                    DiffActivity::Const => DiffActivity::Const,
+                    _ => bug!("unexpected activity for ptr/ref"),
+                };
+                new_activities.push(activity);
+                new_positions.push(i + 1);
             }
+
+            continue;
         }
 
         let pci = PseudoCanonicalInput { typing_env: TypingEnv::fully_monomorphized(), value: *ty };
@@ -116,7 +113,7 @@ pub(crate) fn adjust_activity_to_abi<'tcx>(
         // Otherwise, the number of activities won't match the number of LLVM arguments and
         // this will lead to errors when verifying the Enzyme call.
         if let rustc_abi::BackendRepr::ScalarPair(_, _) = layout.backend_repr() {
-            new_activities.push(da[i].clone());
+            new_activities.push(da[i]);
             new_positions.push(i + 1 - del_activities);
         }
     }
@@ -169,7 +166,7 @@ fn match_args_from_caller_to_enzyme<'ll, 'tcx>(
     let global_dupnoneedv = cx.declare_global("enzyme_dupnoneedv", cx.type_ptr());
 
     while activity_pos < inputs.len() {
-        let diff_activity = inputs[activity_pos as usize];
+        let diff_activity = inputs[activity_pos];
         // Duplicated arguments received a shadow argument, into which enzyme will write the
         // gradient.
         let (activity, duplicated): (&Value, bool) = match diff_activity {
@@ -295,7 +292,7 @@ pub(crate) fn generate_enzyme_call<'ll, 'tcx>(
     outer_name: &str,
     ret_ty: &'ll Type,
     fn_args: &[&'ll Value],
-    attrs: AutoDiffAttrs,
+    attrs: RustcAutodiff,
     dest: PlaceRef<'tcx, &'ll Value>,
     fnc_tree: FncTree,
 ) {
@@ -351,7 +348,7 @@ pub(crate) fn generate_enzyme_call<'ll, 'tcx>(
         enzyme_ty,
     );
 
-    let num_args = llvm::LLVMCountParams(&fn_to_diff);
+    let num_args = llvm::LLVMCountParams(fn_to_diff);
     let mut args = Vec::with_capacity(num_args as usize + 1);
     args.push(fn_to_diff);
 
@@ -366,7 +363,7 @@ pub(crate) fn generate_enzyme_call<'ll, 'tcx>(
     }
 
     match_args_from_caller_to_enzyme(
-        &cx,
+        cx,
         builder,
         attrs.width,
         &mut args,

@@ -43,11 +43,11 @@ fn restore_library_path() {
     let key = "LD_LIBRARY_PATH";
     if let Some(env) = tracked_env_var_os("REAL_LIBRARY_PATH") {
         unsafe {
-            env::set_var(&key, env);
+            env::set_var(key, env);
         }
     } else {
         unsafe {
-            env::remove_var(&key);
+            env::remove_var(key);
         }
     }
 }

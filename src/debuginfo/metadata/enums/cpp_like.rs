@@ -215,7 +215,7 @@ pub(super) fn build_enum_type_di_node<'ll, 'tcx>(
             match enum_type_and_layout.variants {
                 Variants::Empty => {
                     // We don't generate any members for uninhabited types.
-                    return smallvec![];
+                    smallvec![]
                 }
                 Variants::Single { index: variant_index } => build_single_variant_union_fields(
                     cx,
@@ -811,7 +811,7 @@ fn build_union_fields_for_direct_tag_enum_or_coroutine<'ll, 'tcx>(
     let mut unions_fields = SmallVec::with_capacity(variant_field_infos.len() + 1);
 
     // We create a field in the union for each variant ...
-    unions_fields.extend(variant_field_infos.into_iter().map(|variant_member_info| {
+    unions_fields.extend(variant_field_infos.iter().map(|variant_member_info| {
         let (file_di_node, line_number) = variant_member_info
             .source_info
             .unwrap_or_else(|| (unknown_file_metadata(cx), UNKNOWN_LINE_NUMBER));

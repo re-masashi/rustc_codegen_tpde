@@ -532,12 +532,11 @@ pub(crate) fn llfn_attrs_from_instance<'ll, 'tcx>(
 
     // Apply function attributes as per usual if there are no user defined
     // target features otherwise this will get applied at the callsite.
-    if function_features.is_empty() {
-        if let Some(instance) = instance
-            && let Some(inline_attr) = inline_attr(cx, tcx, instance)
-        {
-            to_add.push(inline_attr);
-        }
+    if function_features.is_empty()
+        && let Some(instance) = instance
+        && let Some(inline_attr) = inline_attr(cx, tcx, instance)
+    {
+        to_add.push(inline_attr);
     }
 
     let function_features = function_features

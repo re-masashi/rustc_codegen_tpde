@@ -212,22 +212,22 @@ impl<'ll, 'tcx> DebugInfoBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
 
         if direct_offset.bytes() > 0 {
             addr_ops.push(DW_OP_plus_uconst);
-            addr_ops.push(direct_offset.bytes() as u64);
+            addr_ops.push(direct_offset.bytes());
             addr_ops.push(DW_OP_stack_value);
         }
         for &offset in indirect_offsets {
             addr_ops.push(DW_OP_deref);
             if offset.bytes() > 0 {
                 addr_ops.push(DW_OP_plus_uconst);
-                addr_ops.push(offset.bytes() as u64);
+                addr_ops.push(offset.bytes());
             }
         }
         if let Some(fragment) = fragment {
             // `DW_OP_LLVM_fragment` takes as arguments the fragment's
             // offset and size, both of them in bits.
             addr_ops.push(DW_OP_LLVM_fragment);
-            addr_ops.push(fragment.start.bits() as u64);
-            addr_ops.push((fragment.end - fragment.start).bits() as u64);
+            addr_ops.push(fragment.start.bits());
+            addr_ops.push((fragment.end - fragment.start).bits());
         }
 
         let di_builder = DIB(self.cx());
@@ -455,7 +455,7 @@ impl<'ll, 'tcx> DebugInfoCodegenMethods<'tcx> for CodegenCx<'ll, 'tcx> {
         let generics = tcx.generics_of(enclosing_fn_def_id);
         let args = instance.args.truncate_to(tcx, generics);
 
-        type_names::push_generic_params(
+        type_names::push_generic_args(
             tcx,
             tcx.normalize_erasing_regions(self.typing_env(), args),
             &mut name,
@@ -483,10 +483,10 @@ impl<'ll, 'tcx> DebugInfoCodegenMethods<'tcx> for CodegenCx<'ll, 'tcx> {
         if self.sess().opts.optimize != config::OptLevel::No {
             spflags |= DISPFlags::SPFlagOptimized;
         }
-        if let Some((id, _)) = tcx.entry_fn(()) {
-            if id == def_id {
-                spflags |= DISPFlags::SPFlagMainSubprogram;
-            }
+        if let Some((id, _)) = tcx.entry_fn(())
+            && id == def_id
+        {
+            spflags |= DISPFlags::SPFlagMainSubprogram;
         }
 
         // When we're adding a method to a type DIE, we only want a DW_AT_declaration there, because

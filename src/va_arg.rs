@@ -7,7 +7,7 @@ use rustc_codegen_ssa::traits::{
 };
 use rustc_middle::ty::Ty;
 use rustc_middle::ty::layout::{HasTyCtxt, LayoutOf};
-use rustc_target::spec::{Abi, Arch};
+use rustc_target::spec::{Arch, CfgAbi};
 
 use crate::builder::Builder;
 use crate::llvm::{Type, Value};
@@ -19,7 +19,7 @@ fn round_up_to_alignment<'ll>(
     align: Align,
 ) -> &'ll Value {
     value = bx.add(value, bx.cx().const_i32(align.bytes() as i32 - 1));
-    return bx.and(value, bx.cx().const_i32(-(align.bytes() as i32)));
+    bx.and(value, bx.cx().const_i32(-(align.bytes() as i32)))
 }
 
 fn round_pointer_up_to_alignment<'ll>(
@@ -235,10 +235,8 @@ fn emit_aapcs_va_arg<'ll, 'tcx>(
     bx.br(end);
 
     bx.switch_to_block(end);
-    let val =
-        bx.phi(layout.immediate_llvm_type(bx), &[reg_value, stack_value], &[in_reg, on_stack]);
 
-    val
+    (bx.phi(layout.immediate_llvm_type(bx), &[reg_value, stack_value], &[in_reg, on_stack])) as _
 }
 
 fn emit_powerpc_va_arg<'ll, 'tcx>(
@@ -270,7 +268,7 @@ fn emit_powerpc_va_arg<'ll, 'tcx>(
 
     // Rust does not currently support any powerpc softfloat targets.
     let target = &bx.cx.tcx.sess.target;
-    let is_soft_float_abi = target.abi == Abi::SoftFloat;
+    let is_soft_float_abi = matches!(target.cfg_abi, CfgAbi::SoftFloat);
     assert!(!is_soft_float_abi);
 
     // All instances of VaArgSafe are passed directly.
@@ -549,7 +547,7 @@ fn emit_x86_64_sysv64_va_arg<'ll, 'tcx>(
             registers_for_primitive(scalar1.primitive());
             registers_for_primitive(scalar2.primitive());
         }
-        BackendRepr::SimdVector { .. } => {
+        BackendRepr::SimdVector { .. } | BackendRepr::SimdScalableVector { .. } => {
             // Because no instance of VaArgSafe uses a non-scalar `BackendRepr`.
             unreachable!(
                 "No x86-64 SysV va_arg implementation for {:?}",
@@ -689,7 +687,9 @@ fn emit_x86_64_sysv64_va_arg<'ll, 'tcx>(
             }
         }
         // The Previous match on `BackendRepr` means control flow already escaped.
-        BackendRepr::SimdVector { .. } | BackendRepr::Memory { .. } => unreachable!(),
+        BackendRepr::SimdVector { .. }
+        | BackendRepr::SimdScalableVector { .. }
+        | BackendRepr::Memory { .. } => unreachable!(),
     };
 
     // AMD64-ABI 3.5.7p5: Step 5. Set:
@@ -875,7 +875,7 @@ fn emit_xtensa_va_arg<'ll, 'tcx>(
     assert!(bx.tcx().sess.target.endian == Endian::Little);
     let value_ptr =
         bx.phi(bx.type_ptr(), &[regsave_value_ptr, stack_value_ptr], &[from_regsave, from_stack]);
-    return bx.load(layout.llvm_type(bx), value_ptr, layout.align.abi);
+    bx.load(layout.llvm_type(bx), value_ptr, layout.align.abi)
 }
 
 pub(super) fn emit_va_arg<'ll, 'tcx>(
@@ -935,7 +935,7 @@ pub(super) fn emit_va_arg<'ll, 'tcx>(
             AllowHigherAlign::Yes,
             ForceRightAdjust::Yes,
         ),
-        Arch::PowerPC64LE => emit_ptr_va_arg(
+        Arch::PowerPC64 => emit_ptr_va_arg(
             bx,
             addr,
             target_ty,

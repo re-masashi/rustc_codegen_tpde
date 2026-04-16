@@ -21,8 +21,8 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
 #include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/CBindingWrapping.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Program.h"
@@ -51,6 +51,7 @@
 #include "tpde-llvm/LLVMCompiler.hpp"
 
 #include <fstream>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -440,8 +441,46 @@ LLVMRustWriteOutputFile(LLVMModuleRef M, const char *Path, const char *DwoPath,
   std::vector<uint8_t> TpdeOutputBuffer;
   TpdeOutputBuffer.reserve(1024 * 4);
   if (!TpdeCompiler->compile_to_elf(*unwrap(M), TpdeOutputBuffer)) {
-    LLVMRustSetLastError("Failed to compile LLVM module with TPDE");
-    return LLVMRustResult::Failure;
+    errs() << "[TPDE Fallback] TPDE compilation failed, falling back to LLVM "
+              "native codegen for module: "
+           << unwrap(M)->getModuleIdentifier() << "\n";
+    Module *TheModule = unwrap(M);
+    Triple TheTriple(TheModule->getTargetTriple());
+
+    std::string ErrorStr;
+    const Target *TheTarget = TargetRegistry::lookupTarget(TheTriple, ErrorStr);
+    if (!TheTarget) {
+      LLVMRustSetLastError(ErrorStr.c_str());
+      return LLVMRustResult::Failure;
+    }
+
+    std::unique_ptr<TargetMachine> TM(TheTarget->createTargetMachine(
+        TheTriple,
+        "", // CPU
+        "", // Features
+        TargetOptions(), Reloc::PIC_, std::nullopt));
+    if (!TM) {
+      LLVMRustSetLastError("Failed to create fallback target machine");
+      return LLVMRustResult::Failure;
+    }
+
+    legacy::PassManager PM;
+    std::error_code EC;
+    raw_fd_ostream OS(Path, EC, sys::fs::OF_None);
+    if (EC) {
+      LLVMRustSetLastError(EC.message().data());
+      return LLVMRustResult::Failure;
+    }
+
+    CodeGenFileType FileType = fromRust(RustFileType);
+    if (TM->addPassesToEmitFile(PM, OS, nullptr, FileType)) {
+      LLVMRustSetLastError("Failed to set up LLVM fallback codegen");
+      return LLVMRustResult::Failure;
+    }
+
+    PM.run(*TheModule);
+    OS.flush();
+    return LLVMRustResult::Success;
   }
 
   std::fstream OutputFile =

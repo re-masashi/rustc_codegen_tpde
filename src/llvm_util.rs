@@ -16,7 +16,7 @@ use rustc_middle::bug;
 use rustc_session::Session;
 use rustc_session::config::{PrintKind, PrintRequest};
 use rustc_target::spec::{
-    Abi, Arch, Env, MergeFunctions, Os, PanicStrategy, SmallDataThresholdSupport,
+    Arch, CfgAbi, Env, MergeFunctions, Os, PanicStrategy, SmallDataThresholdSupport,
 };
 use smallvec::{SmallVec, smallvec};
 
@@ -69,7 +69,7 @@ unsafe fn configure_llvm(sess: &Session) {
     let sess_args = cg_opts.chain(tg_opts);
 
     let user_specified_args: FxHashSet<_> =
-        sess_args.clone().map(|s| llvm_arg_to_arg_name(s)).filter(|s| !s.is_empty()).collect();
+        sess_args.clone().map(llvm_arg_to_arg_name).filter(|s| !s.is_empty()).collect();
 
     {
         // This adds the given argument to LLVM. Unless `force` is true
@@ -125,7 +125,7 @@ unsafe fn configure_llvm(sess: &Session) {
         }
 
         for arg in sess_args {
-            add(&(*arg), true);
+            add(arg, true);
         }
 
         match (
@@ -312,7 +312,7 @@ pub(crate) fn target_config(sess: &Session) -> TargetConfig {
         sess,
         |feature| {
             to_llvm_features(sess, feature)
-                .map(|f| SmallVec::<[&str; 2]>::from_iter(f.into_iter()))
+                .map(SmallVec::<[&str; 2]>::from_iter)
                 .unwrap_or_default()
         },
         |feature| {
@@ -355,7 +355,7 @@ fn update_target_reliable_float_cfg(sess: &Session, cfg: &mut TargetConfig) {
     let target_arch = &sess.target.arch;
     let target_os = &sess.target.options.os;
     let target_env = &sess.target.options.env;
-    let target_abi = &sess.target.options.abi;
+    let target_abi = &sess.target.options.cfg_abi;
     let target_pointer_width = sess.target.pointer_width;
     let version = get_version();
     let lt_20_1_1 = version < (20, 1, 1);
@@ -373,7 +373,9 @@ fn update_target_reliable_float_cfg(sess: &Session, cfg: &mut TargetConfig) {
         // Selection failure <https://github.com/llvm/llvm-project/issues/50374> (fixed in llvm21)
         (Arch::S390x, _) if lt_21_0_0 => false,
         // MinGW ABI bugs <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115054>
-        (Arch::X86_64, Os::Windows) if *target_env == Env::Gnu && *target_abi != Abi::Llvm => false,
+        (Arch::X86_64, Os::Windows) if *target_env == Env::Gnu && *target_abi != CfgAbi::Llvm => {
+            false
+        }
         // Infinite recursion <https://github.com/llvm/llvm-project/issues/97981>
         (Arch::CSky, _) => false,
         (Arch::Hexagon, _) if lt_21_0_0 => false, // (fixed in llvm21)
@@ -405,7 +407,9 @@ fn update_target_reliable_float_cfg(sess: &Session, cfg: &mut TargetConfig) {
         // not fail if our compiler-builtins is linked. (fixed in llvm21)
         (Arch::X86, _) if lt_21_0_0 => false,
         // MinGW ABI bugs <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115054>
-        (Arch::X86_64, Os::Windows) if *target_env == Env::Gnu && *target_abi != Abi::Llvm => false,
+        (Arch::X86_64, Os::Windows) if *target_env == Env::Gnu && *target_abi != CfgAbi::Llvm => {
+            false
+        }
         // There are no known problems on other platforms, so the only requirement is that symbols
         // are available. `compiler-builtins` provides all symbols required for core `f128`
         // support, so this should work for everything else.
@@ -487,7 +491,7 @@ pub(crate) fn print(req: &PrintRequest, out: &mut String, sess: &Session) {
 
 fn print_target_cpus(sess: &Session, tm: &llvm::TargetMachine, out: &mut String) {
     let cpu_names = llvm::build_string(|s| unsafe {
-        llvm::LLVMRustPrintTargetCPUs(&tm, s);
+        llvm::LLVMRustPrintTargetCPUs(tm, s);
     })
     .unwrap();
 
@@ -547,7 +551,7 @@ fn print_target_features(sess: &Session, tm: &llvm::TargetMachine, out: &mut Str
             }
             // LLVM asserts that these are sorted. LLVM and Rust both use byte comparison for these
             // strings.
-            let llvm_feature = to_llvm_features(sess, *feature)?.llvm_feature_name;
+            let llvm_feature = to_llvm_features(sess, feature)?.llvm_feature_name;
             let desc =
                 match llvm_target_features.binary_search_by_key(&llvm_feature, |(f, _d)| f).ok() {
                     Some(index) => {

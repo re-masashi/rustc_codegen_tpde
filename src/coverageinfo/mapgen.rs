@@ -1,4 +1,4 @@
-use std::assert_matches::assert_matches;
+use std::assert_matches;
 use std::sync::Arc;
 
 use itertools::Itertools;
@@ -7,8 +7,6 @@ use rustc_codegen_ssa::traits::{BaseTypeCodegenMethods, ConstCodegenMethods};
 use rustc_data_structures::fx::FxIndexMap;
 use rustc_index::IndexVec;
 use rustc_middle::ty::TyCtxt;
-use rustc_session::RemapFileNameExt;
-use rustc_session::config::RemapPathScopeComponents;
 use rustc_span::{SourceFile, StableSourceFileId};
 use tracing::debug;
 
@@ -127,10 +125,8 @@ impl GlobalFileTable {
 
         for file in all_files {
             raw_file_table.entry(file.stable_id).or_insert_with(|| {
-                file.name
-                    .for_scope(tcx.sess, RemapPathScopeComponents::COVERAGE)
-                    .to_string_lossy()
-                    .into_owned()
+                // TODO: Apply path remapping if needed
+                format!("{:?}", file.name)
             });
         }
 
@@ -143,13 +139,8 @@ impl GlobalFileTable {
         // Since version 6 of the LLVM coverage mapping format, the first entry
         // in the global file table is treated as a base directory, used to
         // resolve any other entries that are stored as relative paths.
-        let base_dir = tcx
-            .sess
-            .opts
-            .working_dir
-            .for_scope(tcx.sess, RemapPathScopeComponents::COVERAGE)
-            .to_string_lossy();
-        table.push(base_dir.as_ref());
+        let base_dir = format!("{:?}", tcx.sess.opts.working_dir);
+        table.push(base_dir.as_str());
 
         // Add the regular entries after the base directory.
         table.extend(raw_file_table.values().map(|name| name.as_str()));

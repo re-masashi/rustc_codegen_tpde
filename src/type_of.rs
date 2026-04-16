@@ -20,7 +20,8 @@ fn uncached_llvm_type<'a, 'tcx>(
 ) -> &'a Type {
     match layout.backend_repr {
         BackendRepr::Scalar(_) => bug!("handled elsewhere"),
-        BackendRepr::SimdVector { element, count } => {
+        BackendRepr::SimdVector { element, count }
+        | BackendRepr::SimdScalableVector { element, count } => {
             let element = layout.scalar_llvm_type_at(cx, element);
             return cx.type_vector(element, count);
         }
@@ -38,11 +39,9 @@ fn uncached_llvm_type<'a, 'tcx>(
             let mut name = with_no_visible_paths!(with_no_trimmed_paths!(layout.ty.to_string()));
             if let (&ty::Adt(def, _), &Variants::Single { index }) =
                 (layout.ty.kind(), &layout.variants)
-            {
-                if def.is_enum() {
+                && def.is_enum() {
                     write!(&mut name, "::{}", def.variant(index).name).unwrap();
                 }
-            }
             if let (&ty::Coroutine(_, _), &Variants::Single { index }) =
                 (layout.ty.kind(), &layout.variants)
             {
@@ -93,7 +92,7 @@ fn struct_llfields<'a, 'tcx>(
     let mut prev_effective_align = layout.align.abi;
     let mut result: Vec<_> = Vec::with_capacity(1 + field_count * 2);
     for i in layout.fields.index_by_increasing_offset() {
-        let target_offset = layout.fields.offset(i as usize);
+        let target_offset = layout.fields.offset(i);
         let field = layout.field(cx, i);
         let effective_field_align =
             layout.align.abi.min(field.align.abi).restrict_for_offset(target_offset);
@@ -176,7 +175,9 @@ pub(crate) trait LayoutLlvmExt<'tcx> {
 impl<'tcx> LayoutLlvmExt<'tcx> for TyAndLayout<'tcx> {
     fn is_llvm_immediate(&self) -> bool {
         match self.backend_repr {
-            BackendRepr::Scalar(_) | BackendRepr::SimdVector { .. } => true,
+            BackendRepr::Scalar(_)
+            | BackendRepr::SimdVector { .. }
+            | BackendRepr::SimdScalableVector { .. } => true,
             BackendRepr::ScalarPair(..) | BackendRepr::Memory { .. } => false,
         }
     }
@@ -186,6 +187,7 @@ impl<'tcx> LayoutLlvmExt<'tcx> for TyAndLayout<'tcx> {
             BackendRepr::ScalarPair(..) => true,
             BackendRepr::Scalar(_)
             | BackendRepr::SimdVector { .. }
+            | BackendRepr::SimdScalableVector { .. }
             | BackendRepr::Memory { .. } => false,
         }
     }
@@ -271,10 +273,8 @@ impl<'tcx> LayoutLlvmExt<'tcx> for TyAndLayout<'tcx> {
 
     fn immediate_llvm_type<'a>(&self, cx: &CodegenCx<'a, 'tcx>) -> &'a Type {
         match self.backend_repr {
-            BackendRepr::Scalar(scalar) => {
-                if scalar.is_bool() {
-                    return cx.type_i1();
-                }
+            BackendRepr::Scalar(scalar) if scalar.is_bool() => {
+                return cx.type_i1();
             }
             BackendRepr::ScalarPair(..) => {
                 // An immediate pair always contains just the two elements, without any padding

@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{iter, ptr};
 
@@ -19,9 +18,7 @@ use rustc_middle::ty::{
     self, AdtKind, CoroutineArgsExt, ExistentialTraitRef, Instance, Ty, TyCtxt, Visibility,
 };
 use rustc_session::config::{self, DebugInfo, Lto};
-use rustc_span::{
-    DUMMY_SP, FileName, FileNameDisplayPreference, SourceFile, Span, Symbol, hygiene,
-};
+use rustc_span::{DUMMY_SP, FileName, SourceFile, Span, Symbol, hygiene};
 use rustc_symbol_mangling::typeid_for_trait_ref;
 use rustc_target::spec::DebuginfoKind;
 use smallvec::smallvec;
@@ -481,6 +478,10 @@ pub(crate) fn spanned_type_di_node<'ll, 'tcx>(
             AdtKind::Enum => enums::build_enum_type_di_node(cx, unique_type_id, span),
         },
         ty::Tuple(_) => build_tuple_type_di_node(cx, unique_type_id),
+        ty::Pat(base_ty, ..) => {
+            // Pattern types are represented as their base type in debuginfo
+            return type_di_node(cx, base_ty);
+        }
         _ => bug!("debuginfo: unexpected type in type_di_node(): {:?}", t),
     };
 
@@ -512,7 +513,7 @@ pub(crate) fn spanned_type_di_node<'ll, 'tcx>(
 
 // FIXME(mw): Cache this via a regular UniqueTypeId instead of an extra field in the debug context.
 fn recursion_marker_type_di_node<'ll, 'tcx>(cx: &CodegenCx<'ll, 'tcx>) -> &'ll DIType {
-    *debug_context(cx).recursion_marker_type.get_or_init(move || {
+    debug_context(cx).recursion_marker_type.get_or_init(move || {
         // The choice of type here is pretty arbitrary -
         // anything reading the debuginfo for a recursive
         // type is going to see *something* weird - the only
@@ -555,79 +556,26 @@ pub(crate) fn file_metadata<'ll>(cx: &CodegenCx<'ll, '_>, source_file: &SourceFi
     ) -> &'ll DIFile {
         debug!(?source_file.name);
 
-        let filename_display_preference =
-            cx.sess().filename_display_preference(RemapPathScopeComponents::DEBUGINFO);
-
-        use rustc_session::config::RemapPathScopeComponents;
+        // TODO: path remapping - simplified for now
         let (directory, file_name) = match &source_file.name {
             FileName::Real(filename) => {
                 let working_directory = &cx.sess().opts.working_dir;
                 debug!(?working_directory);
 
-                if filename_display_preference == FileNameDisplayPreference::Remapped {
-                    let filename = cx
-                        .sess()
-                        .source_map()
-                        .path_mapping()
-                        .to_embeddable_absolute_path(filename.clone(), working_directory);
+                // Simplified path handling - TODO: proper remapping
+                let abs_path_str = format!("{:?}", filename);
+                let work_dir_str = format!("{:?}", working_directory);
 
-                    // Construct the absolute path of the file
-                    let abs_path = filename.remapped_path_if_available();
-                    debug!(?abs_path);
-
-                    if let Ok(rel_path) =
-                        abs_path.strip_prefix(working_directory.remapped_path_if_available())
-                    {
-                        // If the compiler's working directory (which also is the DW_AT_comp_dir of
-                        // the compilation unit) is a prefix of the path we are about to emit, then
-                        // only emit the part relative to the working directory. Because of path
-                        // remapping we sometimes see strange things here: `abs_path` might
-                        // actually look like a relative path (e.g.
-                        // `<crate-name-and-version>/src/lib.rs`), so if we emit it without taking
-                        // the working directory into account, downstream tooling will interpret it
-                        // as `<working-directory>/<crate-name-and-version>/src/lib.rs`, which
-                        // makes no sense. Usually in such cases the working directory will also be
-                        // remapped to `<crate-name-and-version>` or some other prefix of the path
-                        // we are remapping, so we end up with
-                        // `<crate-name-and-version>/<crate-name-and-version>/src/lib.rs`.
-                        // By moving the working directory portion into the `directory` part of the
-                        // DIFile, we allow LLVM to emit just the relative path for DWARF, while
-                        // still emitting the correct absolute path for CodeView.
-                        (
-                            working_directory.to_string_lossy(FileNameDisplayPreference::Remapped),
-                            rel_path.to_string_lossy().into_owned(),
-                        )
-                    } else {
-                        ("".into(), abs_path.to_string_lossy().into_owned())
-                    }
+                if abs_path_str.starts_with(&work_dir_str) {
+                    let rel_path = &abs_path_str[work_dir_str.len()..];
+                    (work_dir_str, rel_path.to_string())
                 } else {
-                    let working_directory = working_directory.local_path_if_available();
-                    let filename = filename.local_path_if_available();
-
-                    debug!(?working_directory, ?filename);
-
-                    let abs_path: Cow<'_, Path> = if filename.is_absolute() {
-                        filename.into()
-                    } else {
-                        let mut p = PathBuf::new();
-                        p.push(working_directory);
-                        p.push(filename);
-                        p.into()
-                    };
-
-                    if let Ok(rel_path) = abs_path.strip_prefix(working_directory) {
-                        (
-                            working_directory.to_string_lossy(),
-                            rel_path.to_string_lossy().into_owned(),
-                        )
-                    } else {
-                        ("".into(), abs_path.to_string_lossy().into_owned())
-                    }
+                    ("".into(), abs_path_str)
                 }
             }
             other => {
                 debug!(?other);
-                ("".into(), other.display(filename_display_preference).to_string())
+                ("".into(), format!("{:?}", other))
             }
         };
 
@@ -889,13 +837,11 @@ pub(crate) fn build_compile_unit_di_node<'ll, 'tcx>(
     codegen_unit_name: &str,
     debug_context: &CodegenUnitDebugContext<'ll, 'tcx>,
 ) -> &'ll DIDescriptor {
-    use rustc_session::RemapFileNameExt;
-    use rustc_session::config::RemapPathScopeComponents;
     let mut name_in_debuginfo = tcx
         .sess
         .local_crate_source_file()
-        .map(|src| src.for_scope(&tcx.sess, RemapPathScopeComponents::DEBUGINFO).to_path_buf())
-        .unwrap_or_else(|| PathBuf::from(tcx.crate_name(LOCAL_CRATE).as_str()));
+        .map(|src| format!("{:?}", src))
+        .unwrap_or_else(|| format!("{}", tcx.crate_name(LOCAL_CRATE)));
 
     // To avoid breaking split DWARF, we need to ensure that each codegen unit
     // has a unique `DW_AT_name`. This is because there's a remote chance that
@@ -914,21 +860,16 @@ pub(crate) fn build_compile_unit_di_node<'ll, 'tcx>(
     // As a workaround for these two issues, we generate unique names for each
     // object file. Those do not correspond to an actual source file but that
     // is harmless.
-    name_in_debuginfo.push("@");
-    name_in_debuginfo.push(codegen_unit_name);
+    name_in_debuginfo = format!("{}@{}", name_in_debuginfo, codegen_unit_name);
 
     debug!("build_compile_unit_di_node: {:?}", name_in_debuginfo);
     let rustc_producer = format!("rustc version {}", tcx.sess.cfg_version);
     // FIXME(#41252) Remove "clang LLVM" if we can get GDB and LLVM to play nice.
     let producer = format!("clang LLVM ({rustc_producer})");
 
-    let name_in_debuginfo = name_in_debuginfo.to_string_lossy();
-    let work_dir = tcx
-        .sess
-        .opts
-        .working_dir
-        .for_scope(tcx.sess, RemapPathScopeComponents::DEBUGINFO)
-        .to_string_lossy();
+    let name_in_debuginfo = format!("{:?}", name_in_debuginfo);
+    // TODO: path remapping
+    let work_dir = format!("{:?}", tcx.sess.opts.working_dir);
     let output_filenames = tcx.output_filenames(());
     let split_name = if tcx.sess.target_can_use_split_dwarf()
         && let Some(f) = output_filenames.split_dwarf_path(
@@ -937,15 +878,11 @@ pub(crate) fn build_compile_unit_di_node<'ll, 'tcx>(
             codegen_unit_name,
             tcx.sess.invocation_temp.as_deref(),
         ) {
-        // We get a path relative to the working directory from split_dwarf_path
-        Some(tcx.sess.source_map().path_mapping().to_real_filename(f))
+        // TODO: path remapping
+        format!("{:?}", f)
     } else {
-        None
+        String::new()
     };
-    let split_name = split_name
-        .as_ref()
-        .map(|f| f.for_scope(tcx.sess, RemapPathScopeComponents::DEBUGINFO).to_string_lossy())
-        .unwrap_or_default();
     let kind = DebugEmissionKind::from_generic(tcx.sess.opts.debuginfo);
 
     let dwarf_version = tcx.sess.dwarf_version();
@@ -968,7 +905,7 @@ pub(crate) fn build_compile_unit_di_node<'ll, 'tcx>(
             None,
         );
 
-        let unit_metadata = llvm::LLVMRustDIBuilderCreateCompileUnit(
+        (llvm::LLVMRustDIBuilderCreateCompileUnit(
             debug_context.builder.as_ref(),
             dwarf_const::DW_LANG_Rust,
             compile_unit_file,
@@ -986,10 +923,8 @@ pub(crate) fn build_compile_unit_di_node<'ll, 'tcx>(
             0,
             tcx.sess.opts.unstable_opts.split_dwarf_inlining,
             debug_name_table_kind,
-        );
-
-        return unit_metadata;
-    };
+        )) as _
+    }
 }
 
 /// Creates a `DW_TAG_member` entry inside the DIE represented by the given `type_di_node`.
@@ -1340,22 +1275,22 @@ fn build_generic_type_param_di_nodes<'ll, 'tcx>(
     cx: &CodegenCx<'ll, 'tcx>,
     ty: Ty<'tcx>,
 ) -> SmallVec<Option<&'ll DIType>> {
-    if let ty::Adt(def, args) = *ty.kind() {
-        if args.types().next().is_some() {
-            let generics = cx.tcx.generics_of(def.did());
-            let names = get_parameter_names(cx, generics);
-            let template_params: SmallVec<_> = iter::zip(args, names)
-                .filter_map(|(kind, name)| {
-                    kind.as_type().map(|ty| {
-                        let actual_type = cx.tcx.normalize_erasing_regions(cx.typing_env(), ty);
-                        let actual_type_di_node = type_di_node(cx, actual_type);
-                        Some(cx.create_template_type_parameter(name.as_str(), actual_type_di_node))
-                    })
+    if let ty::Adt(def, args) = *ty.kind()
+        && args.types().next().is_some()
+    {
+        let generics = cx.tcx.generics_of(def.did());
+        let names = get_parameter_names(cx, generics);
+        let template_params: SmallVec<_> = iter::zip(args, names)
+            .filter_map(|(kind, name)| {
+                kind.as_type().map(|ty| {
+                    let actual_type = cx.tcx.normalize_erasing_regions(cx.typing_env(), ty);
+                    let actual_type_di_node = type_di_node(cx, actual_type);
+                    Some(cx.create_template_type_parameter(name.as_str(), actual_type_di_node))
                 })
-                .collect();
+            })
+            .collect();
 
-            return template_params;
-        }
+        return template_params;
     }
 
     return smallvec![];
@@ -1534,13 +1469,13 @@ fn build_vtable_type_di_node<'ll, 'tcx>(
 /// global variable (which is simply returned), or an addrspacecast constant expression.
 /// If the given value is an addrspacecast, the cast is removed and the global variable behind
 /// the cast is returned.
-fn find_vtable_behind_cast<'ll>(vtable: &'ll Value) -> &'ll Value {
+fn find_vtable_behind_cast(vtable: &Value) -> &Value {
     // The vtable is a global variable, which may be behind an addrspacecast.
     unsafe {
-        if let Some(c) = llvm::LLVMIsAConstantExpr(vtable) {
-            if llvm::LLVMGetConstOpcode(c) == llvm::Opcode::AddrSpaceCast {
-                return llvm::LLVMGetOperand(c, 0).unwrap();
-            }
+        if let Some(c) = llvm::LLVMIsAConstantExpr(vtable)
+            && llvm::LLVMGetConstOpcode(c) == llvm::Opcode::AddrSpaceCast
+        {
+            return llvm::LLVMGetOperand(c, 0).unwrap();
         }
     }
     vtable
@@ -1671,7 +1606,7 @@ pub(crate) fn extend_scope_to_file<'ll>(
 }
 
 fn tuple_field_name(field_index: usize) -> Cow<'static, str> {
-    const TUPLE_FIELD_NAMES: [&'static str; 16] = [
+    const TUPLE_FIELD_NAMES: [&str; 16] = [
         "__0", "__1", "__2", "__3", "__4", "__5", "__6", "__7", "__8", "__9", "__10", "__11",
         "__12", "__13", "__14", "__15",
     ];
