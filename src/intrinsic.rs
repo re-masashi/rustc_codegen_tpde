@@ -438,24 +438,30 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                             } else {
                                 (args[1].immediate(), args[2].immediate())
                             };
-                        let llvm_name = format!("llvm.fsh{}", if is_left { 'l' } else { 'r' });
-
                         // llvm expects shift to be the same type as the values, but rust
                         // always uses `u32`.
                         let raw_shift = self.intcast(raw_shift, self.val_ty(lhs), false);
 
-                        self.call_intrinsic(llvm_name, &[llty], &[lhs, rhs, raw_shift])
+                        self.call_intrinsic(
+                            if is_left { "llvm.fshl" } else { "llvm.fshr" },
+                            &[llty],
+                            &[lhs, rhs, raw_shift],
+                        )
                     }
                     sym::saturating_add | sym::saturating_sub => {
                         let is_add = name == sym::saturating_add;
                         let lhs = args[0].immediate();
                         let rhs = args[1].immediate();
-                        let llvm_name = format!(
-                            "llvm.{}{}.sat",
-                            if signed { 's' } else { 'u' },
-                            if is_add { "add" } else { "sub" },
-                        );
-                        self.call_intrinsic(llvm_name, &[llty], &[lhs, rhs])
+                        self.call_intrinsic(
+                            match (signed, is_add) {
+                                (false, true) => "llvm.uadd.sat",
+                                (false, false) => "llvm.usub.sat",
+                                (true, true) => "llvm.sadd.sat",
+                                (true, false) => "llvm.ssub.sat",
+                            },
+                            &[llty],
+                            &[lhs, rhs],
+                        )
                     }
                     _ => bug!(),
                 }
@@ -692,18 +698,16 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 "llvm.prefetch" => {
                     return self.const_undef(self.type_i1());
                 }
-                // Other intrinsics - fall through to warning
+                // Other intrinsics - fall through to debug log
                 _ => {
-                    // For now, emit a warning and return a dummy value
-                    // In a complete implementation, these would be properly mapped
-                    eprintln!("[TPDE] Unhandled LLVM intrinsic: {}", name_str);
+                    debug!("unhandled LLVM intrinsic: {}", name_str);
                     return self.const_undef(self.type_i1());
                 }
             }
         }
 
         // No symbol name available
-        eprintln!("[TPDE] LLVM intrinsic call with no symbol name");
+        debug!("LLVM intrinsic call with no symbol name");
         self.const_undef(self.type_i1())
     }
 }

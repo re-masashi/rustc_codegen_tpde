@@ -573,15 +573,24 @@ impl<'a, 'll, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
             }
         }
 
-        let oop_str = match oop {
+        let _oop_str = match oop {
             OverflowOp::Add => "add",
             OverflowOp::Sub => "sub",
             OverflowOp::Mul => "mul",
         };
 
-        let name = format!("llvm.{}{oop_str}.with.overflow", if signed { 's' } else { 'u' });
-
-        let res = self.call_intrinsic(name, &[self.type_ix(width)], &[lhs, rhs]);
+        let res = self.call_intrinsic(
+            match (signed, oop) {
+                (false, OverflowOp::Add) => "llvm.uadd.with.overflow",
+                (false, OverflowOp::Sub) => "llvm.usub.with.overflow",
+                (false, OverflowOp::Mul) => "llvm.umul.with.overflow",
+                (true, OverflowOp::Add) => "llvm.sadd.with.overflow",
+                (true, OverflowOp::Sub) => "llvm.ssub.with.overflow",
+                (true, OverflowOp::Mul) => "llvm.smul.with.overflow",
+            },
+            &[self.type_ix(width)],
+            &[lhs, rhs],
+        );
         (self.extract_value(res, 0), self.extract_value(res, 1))
     }
 

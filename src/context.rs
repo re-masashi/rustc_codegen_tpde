@@ -505,10 +505,12 @@ pub(crate) unsafe fn create_module<'ll>(
     //
     // On the wasm targets it will get hooked up to the "producer" sections
     // `processed-by` information.
-    #[allow(clippy::option_env_unwrap)]
-    let rustc_producer = format!("rustc_codegen_tpde version {}", env!("CARGO_PKG_VERSION"));
+    static RUSTC_PRODUCER: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    let rustc_producer = RUSTC_PRODUCER.get_or_init(|| {
+        format!("rustc_codegen_tpde version {}", env!("CARGO_PKG_VERSION")).into_bytes()
+    });
 
-    let name_metadata = cx.create_metadata(rustc_producer.as_bytes());
+    let name_metadata = cx.create_metadata(rustc_producer);
     cx.module_add_named_metadata_node(llmod, c"llvm.ident", &[name_metadata]);
 
     // Emit RISC-V specific target-abi metadata

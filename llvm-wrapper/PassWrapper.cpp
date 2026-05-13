@@ -11,7 +11,9 @@
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/AutoUpgrade.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -413,6 +415,191 @@ static CodeGenFileType fromRust(LLVMRustFileType Type) {
   }
 }
 
+static bool typeHasFP80InComposite(Type *ty) {
+  if (ty->isX86_FP80Ty())
+    return true;
+  if (auto *st = dyn_cast<StructType>(ty)) {
+    for (Type *el : st->elements())
+      if (typeHasFP80InComposite(el))
+        return true;
+  }
+  if (auto *at = dyn_cast<ArrayType>(ty)) {
+    if (typeHasFP80InComposite(at->getElementType()))
+      return true;
+  }
+  return false;
+}
+
+static bool isModuleSupported(Module &mod) {
+  for (GlobalVariable &gv : mod.globals()) {
+    if (!gv.isThreadLocal())
+      continue;
+    for (Use &use : gv.uses()) {
+      auto *intrin = dyn_cast<IntrinsicInst>(use.getUser());
+      if (!intrin || intrin->getIntrinsicID() != Intrinsic::threadlocal_address)
+        return false;
+    }
+  }
+
+  for (Function &fn : mod) {
+    if (fn.isIntrinsic() || fn.isDeclaration())
+      continue;
+
+    if (fn.hasPersonalityFn()) {
+      if (!isa<GlobalValue>(fn.getPersonalityFn()))
+        return false;
+    }
+
+    for (BasicBlock &bb : fn) {
+      for (Instruction &inst : bb) {
+        if (isa<PHINode>(&inst))
+          continue;
+
+        switch (inst.getOpcode()) {
+        case Instruction::Ret:
+        case Instruction::Br:
+        case Instruction::Switch:
+        case Instruction::Invoke:
+        case Instruction::Resume:
+        case Instruction::Unreachable:
+        case Instruction::FNeg:
+        case Instruction::Add:
+        case Instruction::FAdd:
+        case Instruction::Sub:
+        case Instruction::FSub:
+        case Instruction::Mul:
+        case Instruction::FMul:
+        case Instruction::UDiv:
+        case Instruction::SDiv:
+        case Instruction::FDiv:
+        case Instruction::URem:
+        case Instruction::SRem:
+        case Instruction::FRem:
+        case Instruction::Shl:
+        case Instruction::LShr:
+        case Instruction::AShr:
+        case Instruction::And:
+        case Instruction::Or:
+        case Instruction::Xor:
+        case Instruction::Alloca:
+        case Instruction::Load:
+        case Instruction::Store:
+        case Instruction::GetElementPtr:
+        case Instruction::Fence:
+        case Instruction::AtomicCmpXchg:
+        case Instruction::AtomicRMW:
+        case Instruction::Trunc:
+        case Instruction::ZExt:
+        case Instruction::SExt:
+        case Instruction::FPToUI:
+        case Instruction::FPToSI:
+        case Instruction::UIToFP:
+        case Instruction::SIToFP:
+        case Instruction::FPTrunc:
+        case Instruction::FPExt:
+        case Instruction::PtrToInt:
+        case Instruction::IntToPtr:
+        case Instruction::BitCast:
+        case Instruction::ICmp:
+        case Instruction::FCmp:
+        case Instruction::Call:
+        case Instruction::Select:
+        case Instruction::ExtractElement:
+        case Instruction::InsertElement:
+        case Instruction::ShuffleVector:
+        case Instruction::ExtractValue:
+        case Instruction::InsertValue:
+        case Instruction::LandingPad:
+        case Instruction::Freeze:
+          break; // supported
+        case Instruction::IndirectBr:
+        case Instruction::AddrSpaceCast:
+        case Instruction::VAArg:
+        case Instruction::CatchPad:
+        case Instruction::CatchRet:
+        case Instruction::CatchSwitch:
+        case Instruction::CleanupPad:
+        case Instruction::CleanupRet:
+        default:
+          return false;
+        }
+
+        Type *res_ty = inst.getType();
+
+        if (auto *vec_ty = dyn_cast<FixedVectorType>(res_ty)) {
+          if (vec_ty->getElementType()->isIntegerTy(1))
+            return false;
+        }
+
+        if (res_ty->isLabelTy() || res_ty->isMetadataTy() ||
+            res_ty->isTokenTy())
+          return false;
+
+        if (res_ty->isStructTy() || res_ty->isArrayTy()) {
+          if (typeHasFP80InComposite(res_ty))
+            return false;
+        }
+      }
+    }
+  }
+
+  for (GlobalAlias &ga : mod.aliases()) {
+    if (!isa<GlobalValue>(ga.getAliasee()))
+      return false;
+  }
+
+  return true;
+}
+
+static void setTPDECompatibleMetadata(Module &mod, bool compatible) {
+  NamedMDNode *named_md = mod.getOrInsertNamedMetadata("tpde.compatible");
+  named_md->clearOperands();
+  Metadata *vals[] = {ConstantAsMetadata::get(ConstantInt::get(
+      Type::getInt32Ty(mod.getContext()), compatible ? 1 : 0))};
+  named_md->addOperand(MDNode::get(mod.getContext(), vals));
+}
+
+static LLVMRustResult runLLVMFallback(LLVMModuleRef M, const char *Path,
+                                      LLVMRustFileType RustFileType) {
+  Module *TheModule = unwrap(M);
+  Triple TheTriple(TheModule->getTargetTriple());
+
+  std::string ErrorStr;
+  const Target *TheTarget = TargetRegistry::lookupTarget(TheTriple, ErrorStr);
+  if (!TheTarget) {
+    LLVMRustSetLastError(ErrorStr.c_str());
+    return LLVMRustResult::Failure;
+  }
+
+  std::unique_ptr<TargetMachine> TM(TheTarget->createTargetMachine(
+      TheTriple,
+      "", // CPU
+      "", // Features
+      TargetOptions(), Reloc::PIC_, std::nullopt));
+  if (!TM) {
+    LLVMRustSetLastError("Failed to create fallback target machine");
+    return LLVMRustResult::Failure;
+  }
+
+  legacy::PassManager PM;
+  std::error_code EC;
+  raw_fd_ostream OS(Path, EC, sys::fs::OF_None);
+  if (EC) {
+    LLVMRustSetLastError(EC.message().data());
+    return LLVMRustResult::Failure;
+  }
+
+  CodeGenFileType FileType = fromRust(RustFileType);
+  if (TM->addPassesToEmitFile(PM, OS, nullptr, FileType)) {
+    LLVMRustSetLastError("Failed to set up LLVM fallback codegen");
+    return LLVMRustResult::Failure;
+  }
+
+  PM.run(*TheModule);
+  OS.flush();
+  return LLVMRustResult::Success;
+}
+
 extern "C" LLVMRustResult
 LLVMRustWriteOutputFile(LLVMModuleRef M, const char *Path, const char *DwoPath,
                         LLVMRustFileType RustFileType) {
@@ -438,49 +625,21 @@ LLVMRustWriteOutputFile(LLVMModuleRef M, const char *Path, const char *DwoPath,
     LLVMRustSetLastError(error.c_str());
     return LLVMRustResult::Failure;
   }
+
+  Module &Mod = *unwrap(M);
+  bool mod_supported = isModuleSupported(Mod);
+  setTPDECompatibleMetadata(Mod, mod_supported);
+  if (!mod_supported) {
+    return runLLVMFallback(M, Path, RustFileType);
+  }
+
   std::vector<uint8_t> TpdeOutputBuffer;
   TpdeOutputBuffer.reserve(1024 * 4);
   if (!TpdeCompiler->compile_to_elf(*unwrap(M), TpdeOutputBuffer)) {
     errs() << "[TPDE Fallback] TPDE compilation failed, falling back to LLVM "
               "native codegen for module: "
            << unwrap(M)->getModuleIdentifier() << "\n";
-    Module *TheModule = unwrap(M);
-    Triple TheTriple(TheModule->getTargetTriple());
-
-    std::string ErrorStr;
-    const Target *TheTarget = TargetRegistry::lookupTarget(TheTriple, ErrorStr);
-    if (!TheTarget) {
-      LLVMRustSetLastError(ErrorStr.c_str());
-      return LLVMRustResult::Failure;
-    }
-
-    std::unique_ptr<TargetMachine> TM(TheTarget->createTargetMachine(
-        TheTriple,
-        "", // CPU
-        "", // Features
-        TargetOptions(), Reloc::PIC_, std::nullopt));
-    if (!TM) {
-      LLVMRustSetLastError("Failed to create fallback target machine");
-      return LLVMRustResult::Failure;
-    }
-
-    legacy::PassManager PM;
-    std::error_code EC;
-    raw_fd_ostream OS(Path, EC, sys::fs::OF_None);
-    if (EC) {
-      LLVMRustSetLastError(EC.message().data());
-      return LLVMRustResult::Failure;
-    }
-
-    CodeGenFileType FileType = fromRust(RustFileType);
-    if (TM->addPassesToEmitFile(PM, OS, nullptr, FileType)) {
-      LLVMRustSetLastError("Failed to set up LLVM fallback codegen");
-      return LLVMRustResult::Failure;
-    }
-
-    PM.run(*TheModule);
-    OS.flush();
-    return LLVMRustResult::Success;
+    return runLLVMFallback(M, Path, RustFileType);
   }
 
   std::fstream OutputFile =
